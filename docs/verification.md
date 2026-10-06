@@ -7,6 +7,6 @@ The initial version was checked on Linux with Python's standard-library unittest
 - The bed was visually checked at all four rotations.
 - Python and JavaScript syntax checks passed.
 
-The launcher uses cross-platform standard-library APIs, and the README includes macOS, Linux, and Windows commands. Native macOS and Windows execution has not been tested in this Linux workspace. Mobile checks use Chromium's touch and viewport emulation.
+The launcher uses cross-platform standard-library APIs, and START_HERE.md includes macOS, Linux, and Windows commands. Native macOS and Windows execution has not been tested in this Linux workspace. Mobile checks use Chromium's touch and viewport emulation.
 
 Optional WebMCP hooks are feature-detected. Registration, state read-back, valid inputs, and invalid-input guards were checked with a stub registry. Native WebMCP validation was unavailable in the installed browser; regular room interactions don't depend on this experimental API.
