@@ -1,4 +1,4 @@
-# Room Remix
+# The Room Remix
 
 A tiny, interactive interior-design playground. Rearrange a sunlit studio or a little bedroom, try a different palette, and compare your room with its original layout.
 
