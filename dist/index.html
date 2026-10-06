@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="A little interactive room-design playground. Rearrange, recolor, and make yourself at home."
+    />
+    <meta name="color-scheme" content="light" />
+    <title>Room Remix — a little room for imagination</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232d382f'/%3E%3Cpath d='M7 12 16 7l9 5v10l-9 5-9-5zM7 12l9 5 9-5M16 17v10' fill='none' stroke='%23f1e7d8' stroke-width='2'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="styles.css" />
+    <script defer src="app.js"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="./" aria-label="Room Remix home"
+        ><span class="brand-mark" aria-hidden="true">▱</span>room remix<span
+          class="brand-dot"
+          >.</span
+        ></a
+      >
+      <span class="top-note">A room of your own.</span>
+      <span class="edition">THE PLAYGROUND <span>№ 001</span></span>
+    </header>
+    <main class="app-shell">
+      <aside class="design-panel" aria-label="Room design controls">
+        <div class="panel-intro">
+          <span class="eyebrow">YOUR DESIGN DESK</span>
+          <h1>A little change.<br />A whole new feeling.</h1>
+          <p>Play with the pieces. Find your kind of room.</p>
+        </div>
+        <section class="control-section">
+          <h2><span>01</span> Find your feeling</h2>
+          <div
+            id="style-options"
+            class="style-options"
+            role="group"
+            aria-label="Design style"
+          ></div>
+        </section>
+        <section class="control-section">
+          <h2><span>02</span> Set the backdrop</h2>
+          <div class="control-label">
+            Wall color <span id="wall-name">Linen</span>
+          </div>
+          <div
+            id="wall-options"
+            class="swatches"
+            role="group"
+            aria-label="Wall color"
+          ></div>
+          <div class="control-label floor-label">Flooring</div>
+          <div
+            id="floor-options"
+            class="floor-options"
+            role="group"
+            aria-label="Flooring"
+          ></div>
+        </section>
+        <section class="control-section furniture-section">
+          <h2><span>03</span> Make a move</h2>
+          <div
+            id="furniture-list"
+            class="furniture-list"
+            role="group"
+            aria-label="Select furniture"
+          ></div>
+          <div class="selection-box">
+            <div class="selected-heading">
+              <div>
+                <span class="eyebrow">SELECTED PIECE</span
+                ><strong id="selected-name">Pick a piece</strong>
+              </div>
+              <button
+                id="rotate"
+                class="icon-button"
+                aria-label="Rotate selected furniture 90 degrees"
+                title="Rotate 90° (R)"
+                disabled
+              >
+                ↻
+              </button>
+            </div>
+            <div id="finish-controls" hidden>
+              <div class="control-label" id="finish-label">Fabric</div>
+              <div
+                id="finish-options"
+                class="swatches"
+                role="group"
+                aria-label="Furniture finish"
+              ></div>
+            </div>
+            <p id="selection-hint">
+              Select furniture in the room or from the list.
+            </p>
+          </div>
+        </section>
+        <details class="keyboard-guide">
+          <summary>Keyboard controls</summary>
+          <p>
+            Select a piece, then use the arrow keys to move it. Hold Shift for
+            bigger steps. Press R to rotate and Escape to deselect.
+          </p>
+        </details>
+      </aside>
+      <section class="workspace" aria-label="Interactive room">
+        <div class="workspace-header">
+          <div>
+            <span class="eyebrow"
+              >THE ROOM / <span id="room-number">01</span></span
+            >
+            <h2 id="room-title">The sunlit studio</h2>
+          </div>
+          <div class="room-picker">
+            <label for="room-select">Explore a room</label
+            ><select id="room-select">
+              <option value="studio">Sunlit studio</option>
+              <option value="tiny-bedroom">Tiny bedroom</option>
+            </select>
+          </div>
+        </div>
+        <div class="scene-toolbar">
+          <span id="room-size" class="room-size">5.6 × 4.4 m</span>
+          <div class="compare" role="group" aria-label="Compare room designs">
+            <button id="before" aria-pressed="false">Before</button
+            ><button id="after" aria-pressed="true">After</button>
+          </div>
+          <button id="reset" class="reset-button" title="Reset this room">
+            ↺ <span>Start fresh</span>
+          </button>
+        </div>
+        <div class="canvas-wrap">
+          <span id="view-label" class="view-label">YOUR REMIX</span
+          ><canvas
+            id="room-canvas"
+            tabindex="0"
+            role="application"
+            aria-label="Interactive isometric room. Select furniture by clicking, or use the furniture list. Use arrow keys to move and R to rotate."
+            aria-describedby="canvas-help"
+          ></canvas>
+          <div id="canvas-help" class="canvas-hint">
+            <span aria-hidden="true">✥</span> Drag to rearrange. Select a piece
+            to rotate.
+          </div>
+        </div>
+        <div class="workspace-footer">
+          <div class="room-caption">
+            <span class="tiny-line"></span
+            ><span>Small space. Endless possibilities.</span>
+          </div>
+          <span class="fiction-note"
+            >An imaginary room, made for exploring.</span
+          >
+        </div>
+        <div
+          id="announcement"
+          class="sr-only"
+          role="status"
+          aria-live="polite"
+        ></div>
+      </section>
+    </main>
+    <noscript
+      ><p class="noscript">
+        Room Remix needs JavaScript enabled in your browser.
+      </p></noscript
+    >
+  </body>
+</html>
