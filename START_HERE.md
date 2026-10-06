@@ -100,6 +100,7 @@ When you're finished, press **Ctrl+C** in the terminal to stop the program. No s
 
 ```text
 room-remix/
+  START_HERE.md       This guide
   demo.py             Python standard-library launcher and local server
   dist/
     index.html        Design desk and semantic controls
