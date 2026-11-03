@@ -8,16 +8,13 @@ import math
 import os
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-import re
 import secrets
-import shutil
 import signal
 import subprocess
 import sys
 import tempfile
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlsplit
 import webbrowser
 
@@ -25,367 +22,30 @@ import webbrowser
 OUTPUT_LIMIT = 1_000_000
 BODY_LIMIT = 2_000_000
 RUN_LOCK = threading.Lock()
-VERSION_CACHE = {}
-VERSION_CACHE_LOCK = threading.Lock()
-VERSION_LOCKS = {}
-LANGUAGE_LISTING_CACHE = None
-LANGUAGE_LISTING_LOCK = threading.Lock()
-
-
-def _which(names):
-    for name in names:
-        executable = shutil.which(name)
-        if executable:
-            return executable
-    return None
-
-
-def _command_version(executable, arguments):
-    try:
-        result = subprocess.run(
-            [executable, *arguments],
-            capture_output=True,
-            text=True,
-            errors="replace",
-            timeout=5,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    for output in (result.stdout, result.stderr):
-        for line in output.splitlines():
-            if line.strip():
-                return line.strip()
-    return None
-
-
-def _cached_command_version(executable, arguments):
-    key = (executable, tuple(arguments))
-    with VERSION_CACHE_LOCK:
-        if key in VERSION_CACHE:
-            return VERSION_CACHE[key]
-        version_lock = VERSION_LOCKS.setdefault(key, threading.Lock())
-    with version_lock:
-        with VERSION_CACHE_LOCK:
-            if key in VERSION_CACHE:
-                return VERSION_CACHE[key]
-        version = _command_version(executable, arguments)
-        with VERSION_CACHE_LOCK:
-            VERSION_CACHE[key] = version
-        return version
-
-
-def _resolve_typescript():
-    node = shutil.which("node")
-    if node:
-        version = _cached_command_version(node, ["--version"])
-        match = re.search(r"v?(\d+)\.(\d+)", version or "")
-        if match and tuple(map(int, match.groups())) >= (22, 6):
-            return {"exe": node, "runner": "node"}
-    deno = shutil.which("deno")
-    if deno:
-        return {"exe": deno, "runner": "deno"}
-    bun = shutil.which("bun")
-    if bun:
-        return {"exe": bun, "runner": "bun"}
-    return None
-
-
-def _resolve_java():
-    java = shutil.which("java")
-    javac = shutil.which("javac")
-    if java and javac:
-        return {"exe": java, "javac": javac, "runner": "java"}
-    return None
-
-
-def _resolve_kotlin():
-    compiler = shutil.which("kotlinc")
-    java = shutil.which("java")
-    if compiler and java:
-        return {"exe": compiler, "java": java, "runner": "kotlinc"}
-    return None
-
-
-def _resolve_compiler(names):
-    executable = _which(names)
-    return {"exe": executable} if executable else None
-
-
-def _resolve_python():
-    return {"exe": sys.executable}
-
-
-def _resolve_named(name):
-    executable = shutil.which(name)
-    return {"exe": executable} if executable else None
-
-
-def _run_version(info, arguments):
-    return _cached_command_version(info["exe"], arguments)
-
-
-def _node_version(info):
-    return _run_version(info, ["--version"])
-
-
-def _typescript_version(info):
-    return _run_version(info, ["--version"])
-
-
-def _java_version(info):
-    return _run_version(info, ["-version"])
-
-
-def _go_version(info):
-    return _run_version(info, ["version"])
-
-
-def _dotnet_version(info):
-    return _run_version(info, ["--version"])
-
-
-def _kotlinc_version(info):
-    return _run_version(info, ["-version"])
-
-
-def _version_flag(info):
-    return _run_version(info, ["--version"])
-
-
-def _python_version(info):
-    return sys.version.split()[0]
-
-
-def _source_command(info, workspace, filename):
-    return [info["exe"], filename]
-
-
-def _javascript_command(info, workspace, filename):
-    return [info["exe"], filename]
-
-
-def _typescript_command(info, workspace, filename):
-    if info["runner"] == "deno":
-        return [info["exe"], "run", filename]
-    if info["runner"] == "node":
-        return [info["exe"], "--experimental-strip-types", "--no-warnings", filename]
-    return [info["exe"], filename]
-
-
-def _java_command(info, workspace, filename):
-    return [info["exe"], filename]
-
-
-def _compiled_path(workspace, name):
-    suffix = ".exe" if os.name == "nt" else ""
-    return str(workspace / (name + suffix))
-
-
-def _compile_c(info, workspace):
-    return [info["exe"], "-O2", "-std=c17", "main.c", "-o", _compiled_path(workspace, "main"), "-lm"]
-
-
-def _compile_cpp(info, workspace):
-    return [info["exe"], "-O2", "-std=c++17", "main.cpp", "-o", _compiled_path(workspace, "main")]
-
-
-def _compile_go(info, workspace):
-    return [info["exe"], "build", "-o", _compiled_path(workspace, "main"), "main.go"]
-
-
-def _compile_rust(info, workspace):
-    return [info["exe"], "-O", "main.rs", "-o", _compiled_path(workspace, "main")]
-
-
-def _compile_kotlin(info, workspace):
-    return [info["exe"], "main.kt", "-include-runtime", "-d", str(workspace / "main.jar")]
-
-
-def _compile_swift(info, workspace):
-    return [info["exe"], "-O", "main.swift", "-o", _compiled_path(workspace, "main")]
-
-
-def _compile_csharp(info, workspace):
-    return [info["exe"], "build", "-c", "Release", "-v", "q", "-nologo", "-o", "out"]
-
-
-def _prepare_csharp(info, workspace):
-    version = _dotnet_version(info)
-    match = re.match(r"(\d+)", version or "")
-    if not match:
-        raise RuntimeError("Could not determine the installed .NET SDK version.")
-    project = (
-        "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup>"
-        "<OutputType>Exe</OutputType>"
-        "<TargetFramework>net{}.0</TargetFramework>"
-        "<ImplicitUsings>enable</ImplicitUsings>"
-        "<Nullable>disable</Nullable>"
-        "</PropertyGroup></Project>"
-    ).format(match.group(1))
-    (workspace / "Main.csproj").write_text(project, encoding="utf-8")
-
-
-def _run_compiled(info, workspace, filename):
-    return [_compiled_path(workspace, "main")]
-
-
-def _run_kotlin(info, workspace, filename):
-    return [info["java"], "-jar", str(workspace / "main.jar")]
-
-
-def _run_csharp(info, workspace, filename):
-    return [info["exe"], str(workspace / "out" / "Main.dll")]
 
 
 LANGUAGE_TABLE = [
     {
-        "id": "python", "name": "Python", "file": "main.py",
-        "resolve": _resolve_python, "version": _python_version,
+        "id": "python",
+        "name": "Python",
+        "file": "main.py",
         "install": "Install Python 3.10+ from https://www.python.org/downloads",
-        "run": lambda info, workspace, filename: [sys.executable, filename],
-    },
-    {
-        "id": "javascript", "name": "JavaScript", "file": "main.js",
-        "resolve": lambda: _resolve_named("node"), "version": _node_version,
-        "install": "Install Node.js from https://nodejs.org",
-        "run": _javascript_command,
-    },
-    {
-        "id": "typescript", "name": "TypeScript", "file": "main.ts",
-        "resolve": _resolve_typescript, "version": _typescript_version,
-        "install": "Install Node.js 22.6+ from https://nodejs.org, Deno, or Bun",
-        "run": _typescript_command,
-    },
-    {
-        "id": "java", "name": "Java", "file": "Main.java",
-        "resolve": _resolve_java, "version": _java_version,
-        "install": "Install a JDK 11+ (including java and javac)",
-        "run": _java_command,
-    },
-    {
-        "id": "c", "name": "C", "file": "main.c",
-        "resolve": lambda: _resolve_compiler(("gcc", "clang", "cc")),
-        "version": _version_flag,
-        "install": "Install GCC or Clang",
-        "compile": _compile_c, "run": _run_compiled,
-    },
-    {
-        "id": "cpp", "name": "C++", "file": "main.cpp",
-        "resolve": lambda: _resolve_compiler(("g++", "clang++", "c++")),
-        "version": _version_flag,
-        "install": "Install G++ or Clang",
-        "compile": _compile_cpp, "run": _run_compiled,
-    },
-    {
-        "id": "csharp", "name": "C#", "file": "Program.cs",
-        "resolve": lambda: _resolve_named("dotnet"), "version": _dotnet_version,
-        "install": "Install the .NET SDK from https://dotnet.microsoft.com/download",
-        "prepare": _prepare_csharp, "compile": _compile_csharp, "run": _run_csharp,
-    },
-    {
-        "id": "go", "name": "Go", "file": "main.go",
-        "resolve": lambda: _resolve_named("go"), "version": _go_version,
-        "install": "Install Go from https://go.dev/dl",
-        "compile": _compile_go, "run": _run_compiled,
-    },
-    {
-        "id": "rust", "name": "Rust", "file": "main.rs",
-        "resolve": lambda: _resolve_named("rustc"), "version": _version_flag,
-        "install": "Install Rust from https://www.rust-lang.org/tools/install",
-        "compile": _compile_rust, "run": _run_compiled,
-    },
-    {
-        "id": "kotlin", "name": "Kotlin", "file": "main.kt",
-        "resolve": _resolve_kotlin, "version": _kotlinc_version,
-        "install": "Install the Kotlin compiler and a JDK",
-        "prepare": None, "compile": _compile_kotlin, "run": _run_kotlin,
-    },
-    {
-        "id": "swift", "name": "Swift", "file": "main.swift",
-        "resolve": lambda: _resolve_named("swiftc"), "version": _version_flag,
-        "install": "Install Swift from https://www.swift.org/download",
-        "compile": _compile_swift, "run": _run_compiled,
-    },
-    {
-        "id": "ruby", "name": "Ruby", "file": "main.rb",
-        "resolve": lambda: _resolve_named("ruby"), "version": _version_flag,
-        "install": "Install Ruby from https://www.ruby-lang.org/en/downloads",
-        "run": _source_command,
-    },
-    {
-        "id": "php", "name": "PHP", "file": "main.php",
-        "resolve": lambda: _resolve_named("php"), "version": _version_flag,
-        "install": "Install PHP from https://www.php.net/downloads",
-        "run": _source_command,
-    },
-    {
-        "id": "bash", "name": "Bash", "file": "main.sh",
-        "resolve": lambda: _resolve_named("bash"), "version": _version_flag,
-        "install": "Install Bash",
-        "run": _source_command,
     },
 ]
 LANGUAGES_BY_ID = {language["id"]: language for language in LANGUAGE_TABLE}
 
 
-def _resolve_language(language):
-    try:
-        return language["resolve"]()
-    except (OSError, subprocess.SubprocessError):
-        return None
-
-
-def _language_version(language, info):
-    try:
-        return language["version"](info)
-    except (OSError, subprocess.SubprocessError):
-        return None
-
-
-def _compute_language_listing():
-    detected = {}
-    with ThreadPoolExecutor(max_workers=len(LANGUAGE_TABLE)) as executor:
-        futures = {
-            language["id"]: executor.submit(_resolve_language, language)
-            for language in LANGUAGE_TABLE
-        }
-        for language in LANGUAGE_TABLE:
-            detected[language["id"]] = futures[language["id"]].result()
-
-    version_cache = {}
-    available = [
-        language for language in LANGUAGE_TABLE
-        if detected[language["id"]] is not None
-    ]
-    with ThreadPoolExecutor(max_workers=max(1, len(available))) as executor:
-        futures = {
-            language["id"]: executor.submit(
-                _language_version, language, detected[language["id"]]
-            )
-            for language in available
-        }
-        for language in available:
-            version_cache[language["id"]] = futures[language["id"]].result()
-
+def _language_listing():
     return [
         {
-            "id": language["id"],
-            "name": language["name"],
-            "available": detected[language["id"]] is not None,
-            "version": version_cache.get(language["id"]),
+            "id": "python",
+            "name": "Python",
+            "available": True,
+            "version": sys.version.split()[0],
             "install": language["install"],
         }
         for language in LANGUAGE_TABLE
     ]
-
-
-def _language_listing():
-    global LANGUAGE_LISTING_CACHE
-    with LANGUAGE_LISTING_LOCK:
-        if LANGUAGE_LISTING_CACHE is None:
-            LANGUAGE_LISTING_CACHE = _compute_language_listing()
-        return [language.copy() for language in LANGUAGE_LISTING_CACHE]
 
 
 def _decode_output(value):
@@ -523,7 +183,7 @@ def _run_process(command, workspace, environment, timeout, stdin_text=None):
     }
 
 
-def _run_code(language, info, code, stdin_text, run_timeout):
+def _run_code(language, code, stdin_text, run_timeout):
     response = {
         "phase": "run",
         "exitCode": None,
@@ -540,39 +200,13 @@ def _run_code(language, info, code, stdin_text, run_timeout):
             workspace = Path(directory)
             with open(workspace / language["file"], "w", encoding="utf-8", newline="") as source:
                 source.write(code)
-            prepare = language.get("prepare")
-            if prepare:
-                try:
-                    prepare(info, workspace)
-                except (OSError, RuntimeError) as error:
-                    response.update(
-                        phase="compile",
-                        exitCode=1,
-                        stderr=str(error),
-                    )
-                    return response
-
-            compile_step = language.get("compile")
-            if compile_step:
-                try:
-                    compile_command = compile_step(info, workspace)
-                    compiled = _run_process(
-                        compile_command,
-                        workspace,
-                        _run_environment(),
-                        max(60, run_timeout),
-                    )
-                except OSError as error:
-                    response.update(phase="compile", exitCode=1, stderr=str(error))
-                    return response
-                if compiled["timedOut"] or compiled["exitCode"] != 0:
-                    response.update(phase="compile", **compiled)
-                    return response
-
-            command = language["run"](info, workspace, language["file"])
             try:
                 result = _run_process(
-                    command, workspace, _run_environment(), run_timeout, stdin_text
+                    [sys.executable, language["file"]],
+                    workspace,
+                    _run_environment(),
+                    run_timeout,
+                    stdin_text,
                 )
             except OSError as error:
                 response.update(exitCode=1, stderr=str(error))
@@ -587,8 +221,6 @@ def _run_environment():
         {
             "PYTHONIOENCODING": "utf-8",
             "PYTHONUNBUFFERED": "1",
-            "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
-            "DOTNET_NOLOGO": "1",
         }
     )
     return environment
@@ -716,19 +348,9 @@ class Handler(SimpleHTTPRequestHandler):
         if language is None:
             _error_response(self, 400, "Unknown language.")
             return
-        info = _resolve_language(language)
-        if info is None:
-            _error_response(
-                self,
-                409,
-                "{} isn't installed on this computer. {}".format(
-                    language["name"], language["install"]
-                ),
-            )
-            return
         _json_response(
             self,
-            _run_code(language, info, payload["code"], payload["stdin"], self.run_timeout),
+            _run_code(language, payload["code"], payload["stdin"], self.run_timeout),
         )
 
     def log_message(self, format, *args):

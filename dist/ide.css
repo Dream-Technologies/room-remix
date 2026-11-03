@@ -135,9 +135,6 @@ kbd {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.language-status.is-missing {
-  color: #9a4b2f;
-}
 .toolbar-actions {
   display: flex;
   gap: 8px;
@@ -271,6 +268,9 @@ kbd {
   flex-direction: column;
   min-height: 0;
   min-width: 0;
+}
+.io-panel[hidden] {
+  display: none !important;
 }
 .io-heading {
   display: flex;

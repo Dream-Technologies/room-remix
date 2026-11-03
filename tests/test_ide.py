@@ -72,10 +72,7 @@ class IdeTests(unittest.TestCase):
         languages = json.loads(body)["languages"]
         self.assertEqual(
             [language["id"] for language in languages],
-            [
-                "python", "javascript", "typescript", "java", "c", "cpp", "csharp",
-                "go", "rust", "kotlin", "swift", "ruby", "php", "bash",
-            ],
+            ["python"],
         )
         python = languages[0]
         self.assertTrue(python["available"])
@@ -210,85 +207,123 @@ class IdeTests(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertIn("error", json.loads(body))
 
-    def test_unavailable_language_is_rejected(self):
-        status, _, body = self.request("GET", "/api/languages")
-        self.assertEqual(status, 200)
-        unavailable = next(
-            (language for language in json.loads(body)["languages"] if not language["available"]),
-            None,
-        )
-        if unavailable is None:
-            self.skipTest("Every supported language is installed.")
+    def test_browser_language_is_not_accepted_by_the_server(self):
         status, _, body = self.post_run(
-            {"language": unavailable["id"], "code": "", "stdin": ""}, self.token
+            {"language": "javascript", "code": "console.log('no')", "stdin": ""},
+            self.token,
         )
-        self.assertEqual(status, 409)
-        self.assertIn(unavailable["name"], json.loads(body)["error"])
-        self.assertIn(unavailable["install"], json.loads(body)["error"])
+        self.assertEqual(status, 400)
+        self.assertIn("error", json.loads(body))
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is not installed")
-    def test_javascript_runs_when_node_is_installed(self):
-        status, _, body = self.post_run(
-            {"language": "javascript", "code": "console.log('node ok')", "stdin": ""},
-            self.token,
-        )
-        self.assertEqual(status, 200)
-        result = json.loads(body)
-        self.assertEqual(result["phase"], "run")
-        self.assertEqual(result["exitCode"], 0)
-        self.assertEqual(result["stdout"].strip(), "node ok")
+    def test_browser_worker_runs_javascript_and_typescript(self):
+        harness = r"""
+const fs = require("node:fs");
+const path = require("node:path");
+const vm = require("node:vm");
+const { performance } = require("node:perf_hooks");
+const workerPath = process.env.ROOM_REMIX_RUNNER;
+const workerSource = fs.readFileSync(workerPath, "utf8");
 
-    @unittest.skipUnless(
-        shutil.which("gcc") or shutil.which("clang") or shutil.which("cc"),
-        "A C compiler is not installed",
-    )
-    def test_c_compile_error_is_reported_as_compile_phase(self):
-        status, _, body = self.post_run(
-            {"language": "c", "code": "int main( {", "stdin": ""}, self.token
-        )
-        self.assertEqual(status, 200)
-        result = json.loads(body)
-        self.assertEqual(result["phase"], "compile")
-        self.assertNotEqual(result["exitCode"], 0)
-        self.assertTrue(result["stderr"])
+async function run(language, code, stdin) {
+  const messages = [];
+  const self = {
+    postMessage(message) {
+      messages.push(JSON.parse(JSON.stringify(message)));
+    },
+  };
+  let context;
+  context = vm.createContext({
+    self,
+    performance,
+    importScripts(...scripts) {
+      for (const script of scripts) {
+        const file = path.resolve(path.dirname(workerPath), script);
+        vm.runInContext(fs.readFileSync(file, "utf8"), context, { filename: file });
+      }
+    },
+  });
+  vm.runInContext(workerSource, context, { filename: workerPath });
+  await self.onmessage({ data: { language, code, stdin } });
+  return messages[messages.length - 1];
+}
 
-    @unittest.skipUnless(
-        shutil.which("g++") or shutil.which("clang++") or shutil.which("c++"),
-        "A C++ compiler is not installed",
-    )
-    def test_cpp_runs_when_a_compiler_is_installed(self):
-        status, _, body = self.post_run(
-            {
-                "language": "cpp",
-                "code": "#include <iostream>\nint main() { std::cout << \"cpp ok\\n\"; }",
-                "stdin": "",
-            },
-            self.token,
+(async () => {
+  const javascript = `const input = require("fs").readFileSync(0, "utf8");
+const lines = input.split("\\n").filter((line, i, all) => line || i < all.length - 1);
+console.log("Hello, world!");
+if (lines.length > 0) console.log(\`Read \${lines.length} line(s) of input.\`);`;
+  const typescript = `const input: string = require("fs").readFileSync(0, "utf8");
+const lines: string[] = input.split("\\n").filter((line, i, all) => line || i < all.length - 1);
+console.log("Hello, world!");
+if (lines.length > 0) console.log(\`Read \${lines.length} line(s) of input.\`);`;
+  const flood = await run(
+    "javascript",
+    'while (true) { console.log("x".repeat(65536)); console.error("y".repeat(65536)); }',
+    "",
+  );
+  const results = {
+    javascript: await run("javascript", javascript, "a\nb\nc\n"),
+    processExit: await run(
+      "javascript",
+      'console.log("before"); process.exit(3); console.log("after");',
+      "",
+    ),
+    thrown: await run("javascript", 'throw new Error("worker boom");', ""),
+    flood: {
+      phase: flood.phase,
+      exitCode: flood.exitCode,
+      stdoutLength: flood.stdout.length,
+      stderrLength: flood.stderr.length,
+      timedOut: flood.timedOut,
+      truncated: flood.truncated,
+    },
+    typescript: await run("typescript", typescript, "a\nb\nc\n"),
+    invalidTypescript: await run("typescript", "const value: string = ;", ""),
+  };
+  process.stdout.write(JSON.stringify(results));
+})().catch((error) => {
+  process.stderr.write(error.stack || String(error));
+  process.exitCode = 1;
+});
+"""
+        environment = os.environ.copy()
+        environment["ROOM_REMIX_RUNNER"] = os.path.join(
+            str(ROOT), "dist", "js-runner.js"
         )
-        self.assertEqual(status, 200)
-        result = json.loads(body)
-        self.assertEqual(result["phase"], "run")
-        self.assertEqual(result["exitCode"], 0)
-        self.assertEqual(result["stdout"].strip(), "cpp ok")
-
-    @unittest.skipUnless(
-        shutil.which("java") and shutil.which("javac"),
-        "A JDK is not installed",
-    )
-    def test_java_runs_when_a_jdk_is_installed(self):
-        status, _, body = self.post_run(
-            {
-                "language": "java",
-                "code": "public class Main { public static void main(String[] args) { System.out.println(\"java ok\"); } }",
-                "stdin": "",
-            },
-            self.token,
+        result = subprocess.run(
+            [shutil.which("node"), "-e", harness],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=environment,
         )
-        self.assertEqual(status, 200)
-        result = json.loads(body)
-        self.assertEqual(result["phase"], "run")
-        self.assertEqual(result["exitCode"], 0)
-        self.assertEqual(result["stdout"].strip(), "java ok")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        results = json.loads(result.stdout)
+        self.assertEqual(results["javascript"]["phase"], "run")
+        self.assertEqual(results["javascript"]["exitCode"], 0)
+        self.assertEqual(
+            results["javascript"]["stdout"],
+            "Hello, world!\nRead 3 line(s) of input.\n",
+        )
+        self.assertEqual(results["processExit"]["phase"], "run")
+        self.assertEqual(results["processExit"]["exitCode"], 3)
+        self.assertEqual(results["processExit"]["stdout"], "before\n")
+        self.assertEqual(results["thrown"]["exitCode"], 1)
+        self.assertIn("worker boom", results["thrown"]["stderr"])
+        self.assertEqual(results["flood"]["phase"], "run")
+        self.assertTrue(results["flood"]["truncated"])
+        self.assertFalse(results["flood"]["timedOut"])
+        self.assertLessEqual(results["flood"]["stdoutLength"], 1_000_000)
+        self.assertLessEqual(results["flood"]["stderrLength"], 1_000_000)
+        self.assertEqual(results["typescript"]["exitCode"], 0)
+        self.assertEqual(
+            results["typescript"]["stdout"],
+            "Hello, world!\nRead 3 line(s) of input.\n",
+        )
+        self.assertEqual(results["invalidTypescript"]["phase"], "compile")
+        self.assertEqual(results["invalidTypescript"]["exitCode"], 1)
+        self.assertTrue(results["invalidTypescript"]["stderr"])
 
     def test_help_and_launch_output_include_ide_link(self):
         help_result = subprocess.run(

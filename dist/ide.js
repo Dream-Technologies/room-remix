@@ -1,7 +1,6 @@
 "use strict";
 
-// A deliberately plain editor: no autocomplete, suggestions, or network calls
-// beyond the local Room Remix server that runs the code on this computer.
+// A deliberately plain editor: JavaScript and TypeScript run in a local worker.
 
 const C_BLOCK = String.raw`\/\*[\s\S]*?(?:\*\/|$)`;
 const SLASH_LINE = String.raw`\/\/[^\n]*`;
@@ -11,11 +10,7 @@ const SQ = String.raw`'(?:\\.|[^'\\\n])*'?`;
 const BACKTICK = String.raw`\x60(?:\\[\s\S]|[^\x60\\])*\x60?`;
 const TRIPLE_DQ = String.raw`"""[\s\S]*?(?:"""|$)`;
 const TRIPLE_SQ = String.raw`'''[\s\S]*?(?:'''|$)`;
-const PREPROCESSOR = String.raw`#[ \t]*[A-Za-z]+`;
-
 const words = (text) => new Set(text.split(/\s+/).filter(Boolean));
-const C_WORDS =
-  "auto break case char const continue default do double else enum extern float for goto if inline int long register restrict return short signed sizeof static struct switch typedef union unsigned void volatile while bool true false NULL";
 const JS_WORDS =
   "async await break case catch class const continue debugger default delete do else export extends false finally for function if import in instanceof let new null of return static super switch this throw true try typeof undefined var void while with yield";
 
@@ -70,286 +65,21 @@ if (lines.length > 0) {
       JS_WORDS +
         " abstract any as boolean declare enum implements interface keyof namespace never number private protected public readonly string type unknown",
     ),
-    starter: `import { readFileSync } from "node:fs";
+    starter: `const input: string = require("fs").readFileSync(0, "utf8");
+const lines: string[] = input.split("\\n").filter((line, i, all) => line || i < all.length - 1);
 
-function main(): void {
-  const input: string = readFileSync(0, "utf8");
-  const lines: string[] = input.split("\\n").filter((line, i, all) => line || i < all.length - 1);
-
-  console.log("Hello, world!");
-  if (lines.length > 0) {
-    console.log(\`Read \${lines.length} line(s) of input.\`);
-  }
+console.log("Hello, world!");
+if (lines.length > 0) {
+  console.log(\`Read \${lines.length} line(s) of input.\`);
 }
-
-main();
 `,
   },
   {
-    id: "java",
-    name: "Java",
+    id: "other",
+    name: "Other",
     indent: "    ",
-    comments: [C_BLOCK, SLASH_LINE],
-    strings: [TRIPLE_DQ, DQ, SQ],
-    keywords: words(
-      "abstract assert boolean break byte case catch char class continue default do double else enum extends false final finally float for if implements import instanceof int interface long new null package private protected public record return short static super switch synchronized this throw throws true try var void volatile while",
-    ),
-    starter: `import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.util.ArrayList;
-import java.util.List;
-
-public class Main {
-    public static void main(String[] args) throws IOException {
-        BufferedReader in = new BufferedReader(new InputStreamReader(System.in));
-        List<String> lines = new ArrayList<>();
-        for (String line = in.readLine(); line != null; line = in.readLine()) {
-            lines.add(line);
-        }
-
-        System.out.println("Hello, world!");
-        if (!lines.isEmpty()) {
-            System.out.println("Read " + lines.size() + " line(s) of input.");
-        }
-    }
-}
-`,
-  },
-  {
-    id: "c",
-    name: "C",
-    indent: "    ",
-    comments: [C_BLOCK, SLASH_LINE],
-    strings: [DQ, SQ],
-    extra: [PREPROCESSOR],
-    keywords: words(C_WORDS),
-    starter: `#include <stdio.h>
-
-int main(void) {
-    char line[4096];
-    int lines = 0;
-    while (fgets(line, sizeof line, stdin)) {
-        lines++;
-    }
-
-    printf("Hello, world!\\n");
-    if (lines > 0) {
-        printf("Read %d line(s) of input.\\n", lines);
-    }
-    return 0;
-}
-`,
-  },
-  {
-    id: "cpp",
-    name: "C++",
-    indent: "    ",
-    comments: [C_BLOCK, SLASH_LINE],
-    strings: [DQ, SQ],
-    extra: [PREPROCESSOR],
-    keywords: words(
-      C_WORDS +
-        " catch class const_cast constexpr delete dynamic_cast explicit friend namespace new noexcept nullptr operator override private protected public reinterpret_cast static_cast std template this throw try typename using virtual",
-    ),
-    starter: `#include <iostream>
-#include <string>
-#include <vector>
-
-int main() {
-    std::vector<std::string> lines;
-    for (std::string line; std::getline(std::cin, line);) {
-        lines.push_back(line);
-    }
-
-    std::cout << "Hello, world!\\n";
-    if (!lines.empty()) {
-        std::cout << "Read " << lines.size() << " line(s) of input.\\n";
-    }
-    return 0;
-}
-`,
-  },
-  {
-    id: "csharp",
-    name: "C#",
-    indent: "    ",
-    comments: [C_BLOCK, SLASH_LINE],
-    strings: [TRIPLE_DQ, `[$@]{0,2}${DQ}`, SQ],
-    extra: [PREPROCESSOR],
-    keywords: words(
-      "abstract as async await base bool break byte case catch char class const continue decimal default delegate do double else enum false finally float for foreach if in int interface internal is long namespace new null object out override params private protected public readonly record ref return sealed static string struct switch this throw true try typeof using var virtual void while",
-    ),
-    starter: `using System;
-using System.Collections.Generic;
-
-class Program
-{
-    static void Main()
-    {
-        var lines = new List<string>();
-        string line;
-        while ((line = Console.ReadLine()) != null)
-        {
-            lines.Add(line);
-        }
-
-        Console.WriteLine("Hello, world!");
-        if (lines.Count > 0)
-        {
-            Console.WriteLine($"Read {lines.Count} line(s) of input.");
-        }
-    }
-}
-`,
-  },
-  {
-    id: "go",
-    name: "Go",
-    indent: "\t",
-    comments: [C_BLOCK, SLASH_LINE],
-    strings: [BACKTICK, DQ, SQ],
-    keywords: words(
-      "break case chan const continue default defer else fallthrough false for func go goto if import interface map nil package range return select struct switch true type var",
-    ),
-    starter: `package main
-
-import (
-	"bufio"
-	"fmt"
-	"os"
-)
-
-func main() {
-	scanner := bufio.NewScanner(os.Stdin)
-	lines := 0
-	for scanner.Scan() {
-		lines++
-	}
-
-	fmt.Println("Hello, world!")
-	if lines > 0 {
-		fmt.Printf("Read %d line(s) of input.\\n", lines)
-	}
-}
-`,
-  },
-  {
-    id: "rust",
-    name: "Rust",
-    indent: "    ",
-    comments: [C_BLOCK, SLASH_LINE],
-    strings: [`b?${DQ}`, String.raw`b?'(?:\\.|[^'\\\n])'`],
-    keywords: words(
-      "as async await break const continue crate dyn else enum extern false fn for if impl in let loop match mod move mut pub ref return self Self static struct super trait true type unsafe use where while",
-    ),
-    starter: `use std::io::{self, BufRead};
-
-fn main() {
-    let lines: Vec<String> = io::stdin().lock().lines().map(|line| line.unwrap()).collect();
-
-    println!("Hello, world!");
-    if !lines.is_empty() {
-        println!("Read {} line(s) of input.", lines.len());
-    }
-}
-`,
-  },
-  {
-    id: "kotlin",
-    name: "Kotlin",
-    indent: "    ",
-    comments: [C_BLOCK, SLASH_LINE],
-    strings: [TRIPLE_DQ, DQ, SQ],
-    keywords: words(
-      "as break class companion continue data do else false for fun if import in interface internal is lateinit null object open override package private protected public return sealed super this throw true try typealias val var when while",
-    ),
-    starter: `fun main() {
-    val lines = generateSequence(::readLine).toList()
-
-    println("Hello, world!")
-    if (lines.isNotEmpty()) {
-        println("Read \${lines.size} line(s) of input.")
-    }
-}
-`,
-  },
-  {
-    id: "swift",
-    name: "Swift",
-    indent: "    ",
-    comments: [C_BLOCK, SLASH_LINE],
-    strings: [TRIPLE_DQ, DQ],
-    keywords: words(
-      "as break case catch class continue default defer do else enum extension false fileprivate for func guard if import in init inout internal is let nil private protocol public repeat return self Self static struct subscript super switch throw throws true try typealias var where while",
-    ),
-    starter: `var lines: [String] = []
-while let line = readLine() {
-    lines.append(line)
-}
-
-print("Hello, world!")
-if !lines.isEmpty {
-    print("Read \\(lines.count) line(s) of input.")
-}
-`,
-  },
-  {
-    id: "ruby",
-    name: "Ruby",
-    indent: "  ",
-    comments: [HASH_LINE],
-    strings: [DQ, SQ],
-    keywords: words(
-      "alias and begin break case class def defined? do else elsif end ensure false for if in module next nil not or redo require rescue retry return self super then true undef unless until when while yield",
-    ),
-    starter: `lines = $stdin.readlines(chomp: true)
-
-puts "Hello, world!"
-puts "Read #{lines.size} line(s) of input." unless lines.empty?
-`,
-  },
-  {
-    id: "php",
-    name: "PHP",
-    indent: "    ",
-    comments: [C_BLOCK, SLASH_LINE, HASH_LINE],
-    strings: [DQ, SQ],
-    keywords: words(
-      "abstract and array as break case catch class clone const continue default do echo else elseif empty enum extends false final finally fn for foreach function global if implements include instanceof interface isset list match namespace new null or print private protected public readonly require return static switch throw trait true try unset use var while yield",
-    ),
-    starter: `<?php
-
-$lines = file("php://stdin", FILE_IGNORE_NEW_LINES) ?: [];
-
-echo "Hello, world!\\n";
-if (count($lines) > 0) {
-    echo "Read " . count($lines) . " line(s) of input.\\n";
-}
-`,
-  },
-  {
-    id: "bash",
-    name: "Bash",
-    indent: "  ",
-    comments: [String.raw`(?:^|(?<=[\s;]))#[^\n]*`],
-    strings: [DQ, String.raw`'[^']*'?`],
-    keywords: words(
-      "case declare do done echo elif else esac exit export fi for function if in local printf read readonly return select shift then until while",
-    ),
-    types: false,
-    starter: `#!/usr/bin/env bash
-
-lines=0
-while IFS= read -r line || [[ -n "$line" ]]; do
-  lines=$((lines + 1))
-done
-
-echo "Hello, world!"
-if (( lines > 0 )); then
-  echo "Read $lines line(s) of input."
-fi
-`,
+    starter:
+      "Write your solution here in any language.\nRunning isn't available for Other: talk us through it instead.",
   },
 ];
 const BY_ID = Object.fromEntries(LANGUAGES.map((language) => [language.id, language]));
@@ -357,6 +87,7 @@ const NUMBER = String.raw`\b(?:0[xX][\da-fA-F_]+|0[bB][01_]+|\d[\d_]*(?:\.\d[\d_
 const WORD = String.raw`[A-Za-z_$][\w$]*\??`;
 
 for (const language of LANGUAGES) {
+  if (!language.comments) continue;
   // Group order: comment, string, extra (keyword-like), number, word.
   const comment = language.comments.join("|");
   const string = language.strings.join("|");
@@ -386,7 +117,7 @@ const tokenMeta = document.querySelector('meta[name="room-remix-run-token"]');
 const runToken = tokenMeta ? tokenMeta.content : "";
 const hasToken = runToken && !runToken.startsWith("__");
 
-const STORAGE_KEY = "room-remix.code-desk.v1";
+const STORAGE_KEY = "room-remix.code-desk.v2";
 const saved = loadSaved();
 let current = BY_ID[saved.language] ? BY_ID[saved.language] : LANGUAGES[0];
 let available = {};
@@ -429,6 +160,7 @@ function escapeHtml(text) {
 }
 
 function highlightCode(text, language) {
+  if (!language.tokenizer) return escapeHtml(text) + " ";
   const tokenizer = language.tokenizer;
   tokenizer.lastIndex = 0;
   let html = "";
@@ -594,35 +326,42 @@ function setLanguage(id, { keepCode = false } = {}) {
   code.scrollLeft = 0;
   indentInfo.textContent = current.indent === "\t" ? "Tabs" : `Spaces: ${current.indent.length}`;
   updateLanguageStatus();
+  const other = current.id === "other";
+  stdin.closest(".io-panel").hidden = other;
+  if (other) {
+    runButton.title = "Other is write-only and cannot be run.";
+    setRunStatus("Write only");
+    showOutput([["note", "Running isn't available for Other."]]);
+  } else {
+    runButton.title = "Run (Ctrl+Enter / ⌘+Enter)";
+  }
   render();
   saveNow();
 }
 
 function updateLanguageStatus() {
   const info = available[current.id];
-  languageStatus.classList.remove("is-missing");
-  if (!hasToken) {
-    languageStatus.textContent = "Open this page from the link printed by demo.py to run code.";
-    languageStatus.classList.add("is-missing");
+  if (current.id === "other") {
+    languageStatus.textContent = "write only, not run";
+  } else if (current.id === "javascript" || current.id === "typescript") {
+    languageStatus.textContent = "runs in your browser";
+  } else if (!hasToken) {
+    languageStatus.textContent = "Open this page from the link printed by demo.py to run Python.";
   } else if (!info) {
-    languageStatus.textContent = "Checking your computer…";
-  } else if (info.available) {
-    languageStatus.textContent = `${info.version ? current.name + " · " + info.version : current.name} · runs on this computer`;
+    languageStatus.textContent = "Checking your Python…";
   } else {
-    languageStatus.textContent = `${current.name} isn't installed here. ${info.install || ""}`.trim();
-    languageStatus.classList.add("is-missing");
+    languageStatus.textContent = `${info.version ? "Python · " + info.version : "Python"} · runs with your Python`;
   }
   languageStatus.title = languageStatus.textContent;
-  runButton.disabled = running || !hasToken || !(info && info.available);
+  runButton.disabled =
+    running ||
+    current.id === "other" ||
+    (current.id === "python" && (!hasToken || !(info && info.available)));
 }
 
 function populateLanguages() {
   languageSelect.replaceChildren(
-    ...LANGUAGES.map((language) => {
-      const info = available[language.id];
-      const missing = info && !info.available;
-      return new Option(language.name + (missing ? " — not installed" : ""), language.id);
-    }),
+    ...LANGUAGES.map((language) => new Option(language.name, language.id)),
   );
   languageSelect.value = current.id;
 }
@@ -636,7 +375,7 @@ async function loadLanguages() {
   } catch (_) {
     available = {};
     languageStatus.textContent = "Can't reach Room Remix. Start it with: python3 demo.py --ide";
-    languageStatus.classList.add("is-missing");
+    languageStatus.title = languageStatus.textContent;
     return;
   }
   populateLanguages();
@@ -664,8 +403,61 @@ function formatDuration(ms) {
   return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(ms < 10000 ? 2 : 1)} s`;
 }
 
+function renderResult(result) {
+  const parts = [];
+  if (result.stdout) parts.push(["stdout", result.stdout]);
+  if (result.stderr) {
+    const gap = result.stdout && !result.stdout.endsWith("\n") ? "\n" : "";
+    parts.push(["stderr", gap + result.stderr]);
+  }
+  if (!parts.length) parts.push(["note", "(no output)"]);
+  if (result.truncated) parts.push(["note", "\n… output was cut off because it was very long."]);
+  const took = formatDuration(result.durationMs || 0);
+  if (result.phase === "compile") {
+    setRunStatus(result.timedOut ? `Compile timed out · ${took}` : "Compile error", "error");
+  } else if (result.timedOut) {
+    setRunStatus(`Stopped at the time limit · ${took}`, "error");
+    parts.push(["note", "\nYour program ran too long and was stopped. Check for an infinite loop or waiting on input."]);
+  } else if (result.exitCode === 0) {
+    setRunStatus(`Finished · ${took}`, "ok");
+  } else {
+    setRunStatus(`Exit code ${result.exitCode} · ${took}`, "error");
+  }
+  showOutput(parts);
+}
+
+function runInWorker() {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker("js-runner.js");
+    const started = performance.now();
+    const timeout = setTimeout(() => {
+      worker.terminate();
+      resolve({
+        phase: "run",
+        exitCode: null,
+        stdout: "",
+        stderr: "",
+        timedOut: true,
+        durationMs: Math.round(performance.now() - started),
+        truncated: false,
+      });
+    }, 10_000);
+    worker.onmessage = ({ data }) => {
+      clearTimeout(timeout);
+      worker.terminate();
+      resolve(data);
+    };
+    worker.onerror = (event) => {
+      clearTimeout(timeout);
+      worker.terminate();
+      reject(new Error(event.message || "The browser worker failed."));
+    };
+    worker.postMessage({ language: current.id, code: code.value, stdin: stdin.value });
+  });
+}
+
 async function run() {
-  if (runButton.disabled) return;
+  if (runButton.disabled || current.id === "other") return;
   saveNow();
   running = true;
   runButton.disabled = true;
@@ -674,40 +466,22 @@ async function run() {
   setRunStatus(`Running ${current.name}…`);
   showOutput([["note", "Running…"]]);
   try {
-    const response = await fetch("api/run", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Room-Remix-Token": runToken },
-      body: JSON.stringify({ language: current.id, code: code.value, stdin: stdin.value }),
-    });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      setRunStatus("Couldn't run", "error");
-      showOutput([["stderr", result.error || `The local server answered ${response.status}.`]]);
-      return;
-    }
-    const parts = [];
-    if (result.stdout) parts.push(["stdout", result.stdout]);
-    if (result.stderr) {
-      const gap = result.stdout && !result.stdout.endsWith("\n") ? "\n" : "";
-      parts.push(["stderr", gap + result.stderr]);
-    }
-    if (!parts.length) parts.push(["note", "(no output)"]);
-    if (result.truncated) parts.push(["note", "\n… output was cut off because it was very long."]);
-    const took = formatDuration(result.durationMs || 0);
-    if (result.phase === "compile") {
-      setRunStatus(result.timedOut ? `Compile timed out · ${took}` : "Compile error", "error");
-    } else if (result.timedOut) {
-      setRunStatus(`Stopped at the time limit · ${took}`, "error");
-      parts.push(["note", "\nYour program ran too long and was stopped. Check for an infinite loop or waiting on input."]);
-    } else if (result.exitCode === 0) {
-      setRunStatus(`Finished · ${took}`, "ok");
+    let result;
+    if (current.id === "javascript" || current.id === "typescript") {
+      result = await runInWorker();
     } else {
-      setRunStatus(`Exit code ${result.exitCode} · ${took}`, "error");
+      const response = await fetch("api/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Room-Remix-Token": runToken },
+        body: JSON.stringify({ language: current.id, code: code.value, stdin: stdin.value }),
+      });
+      result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || `The local server answered ${response.status}.`);
     }
-    showOutput(parts);
-  } catch (_) {
+    renderResult(result);
+  } catch (error) {
     setRunStatus("Couldn't run", "error");
-    showOutput([["stderr", "Can't reach Room Remix. Is demo.py still running in your terminal?"]]);
+    showOutput([["stderr", error.message || "Can't reach Room Remix. Is demo.py still running?"]]);
   } finally {
     running = false;
     runButton.classList.remove("is-running");
@@ -760,7 +534,7 @@ $("clear-challenge").addEventListener("click", () => {
 document.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
     event.preventDefault();
-    run();
+    if (current.id !== "other") run();
   }
 });
 

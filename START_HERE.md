@@ -93,9 +93,9 @@ When you're finished, press **Ctrl+C** in the terminal to stop the program. No s
 
 Open the editor directly with `python3 demo.py --ide` on macOS or Linux, or `py -3 demo.py --ide` in Windows PowerShell. You can also click **Code** in the room page header.
 
-Paste the challenge your interviewer gives you into the **Challenge** panel, pick a language, and press **Run** (**Ctrl+Enter** or **Cmd+Enter**). The **Input** box is standard input for your program. Code runs on your computer with the compilers and language tools you already have installed; the language menu marks tools that are missing.
+Paste the challenge your interviewer gives you into the **Challenge** panel and choose **Python**, **JavaScript**, **TypeScript**, or **Other**. Python runs with the Python you already need to launch the demo. JavaScript and TypeScript run in your browser, so no other runtimes are needed. **Other** is for writing in any language that you want to talk through instead of running.
 
-There is no autocomplete or AI. Your work stays in this browser and survives a refresh. Use **Copy** if you want to keep it somewhere else.
+For runnable languages, the **Input** box is standard input. Press **Run** (**Ctrl+Enter** or **Cmd+Enter**) to see the output. There is no autocomplete or AI. Your work stays in this browser and survives a refresh. Use **Copy** if you want to keep it somewhere else.
 
 ## If something doesn't work
 
@@ -117,7 +117,13 @@ room-remix/
     app.js            Canvas geometry and interactions
     ide.html          Coding-challenge editor
     ide.css           Editor layout and styles
-    ide.js            Editor and local runner controls
+    ide.js            Editor and runner controls
+    js-runner.js      Browser JavaScript and TypeScript runner
+    vendor/
+      sucrase.js      Offline TypeScript transpiler
+      sucrase-entry.js Sucrase transform export for rebuilding
+      README.md       Vendored transpiler version and rebuild command
+      LICENSE         Sucrase MIT license
   docs/
     room-remix.png    Screenshot of the demo
   tests/
