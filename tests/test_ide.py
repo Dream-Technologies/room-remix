@@ -152,6 +152,22 @@ class IdeTests(unittest.TestCase):
             with self.assertRaises(ProcessLookupError):
                 os.kill(pid, 0)
 
+    def test_output_flood_is_truncated_and_bounded(self):
+        status, _, body = self.post_run(
+            {
+                "language": "python",
+                "code": "import sys\nwhile True: sys.stdout.write('x' * 65536)",
+                "stdin": "",
+            },
+            self.token,
+        )
+        self.assertEqual(status, 200)
+        result = json.loads(body)
+        self.assertTrue(result["truncated"])
+        self.assertLessEqual(len(result["stdout"]), 1_000_000)
+        self.assertFalse(result["timedOut"])
+        self.assertLess(result["durationMs"], 4000)
+
     def test_missing_and_wrong_tokens_are_forbidden(self):
         payload = {"language": "python", "code": "print('no')", "stdin": ""}
         for token in (None, "wrong"):

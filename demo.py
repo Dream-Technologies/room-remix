@@ -130,10 +130,6 @@ def _node_version(info):
 
 
 def _typescript_version(info):
-    if info["runner"] == "deno":
-        return _run_version(info, ["--version"])
-    if info["runner"] == "bun":
-        return _run_version(info, ["--version"])
     return _run_version(info, ["--version"])
 
 
@@ -400,11 +396,13 @@ def _decode_output(value):
     return value.decode("utf-8", errors="replace")
 
 
-def _limited_output(stdout, stderr):
-    stdout = _decode_output(stdout)
-    stderr = _decode_output(stderr)
-    truncated = len(stdout) > OUTPUT_LIMIT or len(stderr) > OUTPUT_LIMIT
-    return stdout[:OUTPUT_LIMIT], stderr[:OUTPUT_LIMIT], truncated
+def _limited_output(stdout, stderr, truncated=False):
+    truncated = truncated or len(stdout) > OUTPUT_LIMIT or len(stderr) > OUTPUT_LIMIT
+    return (
+        _decode_output(stdout[:OUTPUT_LIMIT]),
+        _decode_output(stderr[:OUTPUT_LIMIT]),
+        truncated,
+    )
 
 
 def _terminate_process(process):
@@ -444,25 +442,84 @@ def _run_process(command, workspace, environment, timeout, stdin_text=None):
         options["start_new_session"] = True
     started = time.monotonic()
     process = subprocess.Popen(**options)
-    try:
-        stdout, stderr = process.communicate(
-            input=stdin_text.encode("utf-8") if stdin_text is not None else None,
-            timeout=timeout,
+
+    output = {"stdout": bytearray(), "stderr": bytearray()}
+    truncated = threading.Event()
+    terminate_lock = threading.Lock()
+
+    def capture(stream, destination):
+        try:
+            while True:
+                chunk = stream.read(65536)
+                if not chunk or truncated.is_set():
+                    return
+                remaining = OUTPUT_LIMIT - len(destination)
+                if len(chunk) > remaining:
+                    destination.extend(chunk[:remaining])
+                    with terminate_lock:
+                        if not truncated.is_set():
+                            truncated.set()
+                            _terminate_process(process)
+                    return
+                destination.extend(chunk)
+        except (OSError, ValueError):
+            return
+
+    reader_threads = []
+    for name in ("stdout", "stderr"):
+        thread = threading.Thread(
+            target=capture,
+            args=(getattr(process, name), output[name]),
+            daemon=True,
         )
+        thread.start()
+        reader_threads.append(thread)
+
+    writer_thread = None
+    if stdin_text is not None:
+
+        def write_stdin():
+            try:
+                process.stdin.write(stdin_text.encode("utf-8"))
+                process.stdin.flush()
+            except (BrokenPipeError, OSError, ValueError):
+                pass
+            finally:
+                try:
+                    process.stdin.close()
+                except (OSError, ValueError):
+                    pass
+
+        writer_thread = threading.Thread(target=write_stdin, daemon=True)
+        writer_thread.start()
+
+    try:
+        process.wait(timeout=timeout)
         timed_out = False
     except subprocess.TimeoutExpired:
         _terminate_process(process)
-        stdout, stderr = process.communicate()
         timed_out = True
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+
+    join_deadline = time.monotonic() + 5
+    for thread in reader_threads + ([writer_thread] if writer_thread else []):
+        thread.join(max(0, join_deadline - time.monotonic()))
+
     duration_ms = int((time.monotonic() - started) * 1000)
-    stdout, stderr, truncated = _limited_output(stdout, stderr)
+    stdout, stderr, was_truncated = _limited_output(
+        output["stdout"], output["stderr"], truncated.is_set()
+    )
     return {
         "exitCode": process.returncode,
         "stdout": stdout,
         "stderr": stderr,
         "timedOut": timed_out,
         "durationMs": duration_ms,
-        "truncated": truncated,
+        "truncated": was_truncated,
     }
 
 
