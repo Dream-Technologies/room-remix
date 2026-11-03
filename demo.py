@@ -1,12 +1,567 @@
 #!/usr/bin/env python3
-"""Launch Room Remix using only Python's standard library."""
+"""Launch Room Remix using only the Python standard library."""
 
 import argparse
 import functools
+import json
+import math
+import os
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+import re
+import secrets
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
 import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import urlsplit
 import webbrowser
+
+
+OUTPUT_LIMIT = 1_000_000
+BODY_LIMIT = 2_000_000
+RUN_LOCK = threading.Lock()
+VERSION_CACHE = {}
+VERSION_CACHE_LOCK = threading.Lock()
+VERSION_LOCKS = {}
+LANGUAGE_LISTING_CACHE = None
+LANGUAGE_LISTING_LOCK = threading.Lock()
+
+
+def _which(names):
+    for name in names:
+        executable = shutil.which(name)
+        if executable:
+            return executable
+    return None
+
+
+def _command_version(executable, arguments):
+    try:
+        result = subprocess.run(
+            [executable, *arguments],
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    for output in (result.stdout, result.stderr):
+        for line in output.splitlines():
+            if line.strip():
+                return line.strip()
+    return None
+
+
+def _cached_command_version(executable, arguments):
+    key = (executable, tuple(arguments))
+    with VERSION_CACHE_LOCK:
+        if key in VERSION_CACHE:
+            return VERSION_CACHE[key]
+        version_lock = VERSION_LOCKS.setdefault(key, threading.Lock())
+    with version_lock:
+        with VERSION_CACHE_LOCK:
+            if key in VERSION_CACHE:
+                return VERSION_CACHE[key]
+        version = _command_version(executable, arguments)
+        with VERSION_CACHE_LOCK:
+            VERSION_CACHE[key] = version
+        return version
+
+
+def _resolve_typescript():
+    node = shutil.which("node")
+    if node:
+        version = _cached_command_version(node, ["--version"])
+        match = re.search(r"v?(\d+)\.(\d+)", version or "")
+        if match and tuple(map(int, match.groups())) >= (22, 6):
+            return {"exe": node, "runner": "node"}
+    deno = shutil.which("deno")
+    if deno:
+        return {"exe": deno, "runner": "deno"}
+    bun = shutil.which("bun")
+    if bun:
+        return {"exe": bun, "runner": "bun"}
+    return None
+
+
+def _resolve_java():
+    java = shutil.which("java")
+    javac = shutil.which("javac")
+    if java and javac:
+        return {"exe": java, "javac": javac, "runner": "java"}
+    return None
+
+
+def _resolve_kotlin():
+    compiler = shutil.which("kotlinc")
+    java = shutil.which("java")
+    if compiler and java:
+        return {"exe": compiler, "java": java, "runner": "kotlinc"}
+    return None
+
+
+def _resolve_compiler(names):
+    executable = _which(names)
+    return {"exe": executable} if executable else None
+
+
+def _resolve_python():
+    return {"exe": sys.executable}
+
+
+def _resolve_named(name):
+    executable = shutil.which(name)
+    return {"exe": executable} if executable else None
+
+
+def _run_version(info, arguments):
+    return _cached_command_version(info["exe"], arguments)
+
+
+def _node_version(info):
+    return _run_version(info, ["--version"])
+
+
+def _typescript_version(info):
+    if info["runner"] == "deno":
+        return _run_version(info, ["--version"])
+    if info["runner"] == "bun":
+        return _run_version(info, ["--version"])
+    return _run_version(info, ["--version"])
+
+
+def _java_version(info):
+    return _run_version(info, ["-version"])
+
+
+def _go_version(info):
+    return _run_version(info, ["version"])
+
+
+def _dotnet_version(info):
+    return _run_version(info, ["--version"])
+
+
+def _kotlinc_version(info):
+    return _run_version(info, ["-version"])
+
+
+def _version_flag(info):
+    return _run_version(info, ["--version"])
+
+
+def _python_version(info):
+    return sys.version.split()[0]
+
+
+def _source_command(info, workspace, filename):
+    return [info["exe"], filename]
+
+
+def _javascript_command(info, workspace, filename):
+    return [info["exe"], filename]
+
+
+def _typescript_command(info, workspace, filename):
+    if info["runner"] == "deno":
+        return [info["exe"], "run", filename]
+    if info["runner"] == "node":
+        return [info["exe"], "--experimental-strip-types", "--no-warnings", filename]
+    return [info["exe"], filename]
+
+
+def _java_command(info, workspace, filename):
+    return [info["exe"], filename]
+
+
+def _compiled_path(workspace, name):
+    suffix = ".exe" if os.name == "nt" else ""
+    return str(workspace / (name + suffix))
+
+
+def _compile_c(info, workspace):
+    return [info["exe"], "-O2", "-std=c17", "main.c", "-o", _compiled_path(workspace, "main"), "-lm"]
+
+
+def _compile_cpp(info, workspace):
+    return [info["exe"], "-O2", "-std=c++17", "main.cpp", "-o", _compiled_path(workspace, "main")]
+
+
+def _compile_go(info, workspace):
+    return [info["exe"], "build", "-o", _compiled_path(workspace, "main"), "main.go"]
+
+
+def _compile_rust(info, workspace):
+    return [info["exe"], "-O", "main.rs", "-o", _compiled_path(workspace, "main")]
+
+
+def _compile_kotlin(info, workspace):
+    return [info["exe"], "main.kt", "-include-runtime", "-d", str(workspace / "main.jar")]
+
+
+def _compile_swift(info, workspace):
+    return [info["exe"], "-O", "main.swift", "-o", _compiled_path(workspace, "main")]
+
+
+def _compile_csharp(info, workspace):
+    return [info["exe"], "build", "-c", "Release", "-v", "q", "-nologo", "-o", "out"]
+
+
+def _prepare_csharp(info, workspace):
+    version = _dotnet_version(info)
+    match = re.match(r"(\d+)", version or "")
+    if not match:
+        raise RuntimeError("Could not determine the installed .NET SDK version.")
+    project = (
+        "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup>"
+        "<OutputType>Exe</OutputType>"
+        "<TargetFramework>net{}.0</TargetFramework>"
+        "<ImplicitUsings>enable</ImplicitUsings>"
+        "<Nullable>disable</Nullable>"
+        "</PropertyGroup></Project>"
+    ).format(match.group(1))
+    (workspace / "Main.csproj").write_text(project, encoding="utf-8")
+
+
+def _run_compiled(info, workspace, filename):
+    return [_compiled_path(workspace, "main")]
+
+
+def _run_kotlin(info, workspace, filename):
+    return [info["java"], "-jar", str(workspace / "main.jar")]
+
+
+def _run_csharp(info, workspace, filename):
+    return [info["exe"], str(workspace / "out" / "Main.dll")]
+
+
+LANGUAGE_TABLE = [
+    {
+        "id": "python", "name": "Python", "file": "main.py",
+        "resolve": _resolve_python, "version": _python_version,
+        "install": "Install Python 3.10+ from https://www.python.org/downloads",
+        "run": lambda info, workspace, filename: [sys.executable, filename],
+    },
+    {
+        "id": "javascript", "name": "JavaScript", "file": "main.js",
+        "resolve": lambda: _resolve_named("node"), "version": _node_version,
+        "install": "Install Node.js from https://nodejs.org",
+        "run": _javascript_command,
+    },
+    {
+        "id": "typescript", "name": "TypeScript", "file": "main.ts",
+        "resolve": _resolve_typescript, "version": _typescript_version,
+        "install": "Install Node.js 22.6+ from https://nodejs.org, Deno, or Bun",
+        "run": _typescript_command,
+    },
+    {
+        "id": "java", "name": "Java", "file": "Main.java",
+        "resolve": _resolve_java, "version": _java_version,
+        "install": "Install a JDK 11+ (including java and javac)",
+        "run": _java_command,
+    },
+    {
+        "id": "c", "name": "C", "file": "main.c",
+        "resolve": lambda: _resolve_compiler(("gcc", "clang", "cc")),
+        "version": _version_flag,
+        "install": "Install GCC or Clang",
+        "compile": _compile_c, "run": _run_compiled,
+    },
+    {
+        "id": "cpp", "name": "C++", "file": "main.cpp",
+        "resolve": lambda: _resolve_compiler(("g++", "clang++", "c++")),
+        "version": _version_flag,
+        "install": "Install G++ or Clang",
+        "compile": _compile_cpp, "run": _run_compiled,
+    },
+    {
+        "id": "csharp", "name": "C#", "file": "Program.cs",
+        "resolve": lambda: _resolve_named("dotnet"), "version": _dotnet_version,
+        "install": "Install the .NET SDK from https://dotnet.microsoft.com/download",
+        "prepare": _prepare_csharp, "compile": _compile_csharp, "run": _run_csharp,
+    },
+    {
+        "id": "go", "name": "Go", "file": "main.go",
+        "resolve": lambda: _resolve_named("go"), "version": _go_version,
+        "install": "Install Go from https://go.dev/dl",
+        "compile": _compile_go, "run": _run_compiled,
+    },
+    {
+        "id": "rust", "name": "Rust", "file": "main.rs",
+        "resolve": lambda: _resolve_named("rustc"), "version": _version_flag,
+        "install": "Install Rust from https://www.rust-lang.org/tools/install",
+        "compile": _compile_rust, "run": _run_compiled,
+    },
+    {
+        "id": "kotlin", "name": "Kotlin", "file": "main.kt",
+        "resolve": _resolve_kotlin, "version": _kotlinc_version,
+        "install": "Install the Kotlin compiler and a JDK",
+        "prepare": None, "compile": _compile_kotlin, "run": _run_kotlin,
+    },
+    {
+        "id": "swift", "name": "Swift", "file": "main.swift",
+        "resolve": lambda: _resolve_named("swiftc"), "version": _version_flag,
+        "install": "Install Swift from https://www.swift.org/download",
+        "compile": _compile_swift, "run": _run_compiled,
+    },
+    {
+        "id": "ruby", "name": "Ruby", "file": "main.rb",
+        "resolve": lambda: _resolve_named("ruby"), "version": _version_flag,
+        "install": "Install Ruby from https://www.ruby-lang.org/en/downloads",
+        "run": _source_command,
+    },
+    {
+        "id": "php", "name": "PHP", "file": "main.php",
+        "resolve": lambda: _resolve_named("php"), "version": _version_flag,
+        "install": "Install PHP from https://www.php.net/downloads",
+        "run": _source_command,
+    },
+    {
+        "id": "bash", "name": "Bash", "file": "main.sh",
+        "resolve": lambda: _resolve_named("bash"), "version": _version_flag,
+        "install": "Install Bash",
+        "run": _source_command,
+    },
+]
+LANGUAGES_BY_ID = {language["id"]: language for language in LANGUAGE_TABLE}
+
+
+def _resolve_language(language):
+    try:
+        return language["resolve"]()
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def _language_version(language, info):
+    try:
+        return language["version"](info)
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def _compute_language_listing():
+    detected = {}
+    with ThreadPoolExecutor(max_workers=len(LANGUAGE_TABLE)) as executor:
+        futures = {
+            language["id"]: executor.submit(_resolve_language, language)
+            for language in LANGUAGE_TABLE
+        }
+        for language in LANGUAGE_TABLE:
+            detected[language["id"]] = futures[language["id"]].result()
+
+    version_cache = {}
+    available = [
+        language for language in LANGUAGE_TABLE
+        if detected[language["id"]] is not None
+    ]
+    with ThreadPoolExecutor(max_workers=max(1, len(available))) as executor:
+        futures = {
+            language["id"]: executor.submit(
+                _language_version, language, detected[language["id"]]
+            )
+            for language in available
+        }
+        for language in available:
+            version_cache[language["id"]] = futures[language["id"]].result()
+
+    return [
+        {
+            "id": language["id"],
+            "name": language["name"],
+            "available": detected[language["id"]] is not None,
+            "version": version_cache.get(language["id"]),
+            "install": language["install"],
+        }
+        for language in LANGUAGE_TABLE
+    ]
+
+
+def _language_listing():
+    global LANGUAGE_LISTING_CACHE
+    with LANGUAGE_LISTING_LOCK:
+        if LANGUAGE_LISTING_CACHE is None:
+            LANGUAGE_LISTING_CACHE = _compute_language_listing()
+        return [language.copy() for language in LANGUAGE_LISTING_CACHE]
+
+
+def _decode_output(value):
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    return value.decode("utf-8", errors="replace")
+
+
+def _limited_output(stdout, stderr):
+    stdout = _decode_output(stdout)
+    stderr = _decode_output(stderr)
+    truncated = len(stdout) > OUTPUT_LIMIT or len(stderr) > OUTPUT_LIMIT
+    return stdout[:OUTPUT_LIMIT], stderr[:OUTPUT_LIMIT], truncated
+
+
+def _terminate_process(process):
+    if os.name == "nt":
+        try:
+            subprocess.run(
+                ["taskkill", "/T", "/F", "/PID", str(process.pid)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            process.kill()
+    else:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+
+def _run_process(command, workspace, environment, timeout, stdin_text=None):
+    options = {
+        "args": command,
+        "cwd": str(workspace),
+        "env": environment,
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "stdin": subprocess.PIPE if stdin_text is not None else subprocess.DEVNULL,
+    }
+    if os.name == "nt":
+        options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        if os.path.splitext(command[0])[1].lower() in (".bat", ".cmd"):
+            options["args"] = subprocess.list2cmdline(command)
+            options["shell"] = True
+    else:
+        options["start_new_session"] = True
+    started = time.monotonic()
+    process = subprocess.Popen(**options)
+    try:
+        stdout, stderr = process.communicate(
+            input=stdin_text.encode("utf-8") if stdin_text is not None else None,
+            timeout=timeout,
+        )
+        timed_out = False
+    except subprocess.TimeoutExpired:
+        _terminate_process(process)
+        stdout, stderr = process.communicate()
+        timed_out = True
+    duration_ms = int((time.monotonic() - started) * 1000)
+    stdout, stderr, truncated = _limited_output(stdout, stderr)
+    return {
+        "exitCode": process.returncode,
+        "stdout": stdout,
+        "stderr": stderr,
+        "timedOut": timed_out,
+        "durationMs": duration_ms,
+        "truncated": truncated,
+    }
+
+
+def _run_code(language, info, code, stdin_text, run_timeout):
+    response = {
+        "phase": "run",
+        "exitCode": None,
+        "stdout": "",
+        "stderr": "",
+        "timedOut": False,
+        "durationMs": 0,
+        "truncated": False,
+    }
+    with RUN_LOCK:
+        with tempfile.TemporaryDirectory(
+            prefix="room-remix-run-", ignore_cleanup_errors=True
+        ) as directory:
+            workspace = Path(directory)
+            with open(workspace / language["file"], "w", encoding="utf-8", newline="") as source:
+                source.write(code)
+            prepare = language.get("prepare")
+            if prepare:
+                try:
+                    prepare(info, workspace)
+                except (OSError, RuntimeError) as error:
+                    response.update(
+                        phase="compile",
+                        exitCode=1,
+                        stderr=str(error),
+                    )
+                    return response
+
+            compile_step = language.get("compile")
+            if compile_step:
+                try:
+                    compile_command = compile_step(info, workspace)
+                    compiled = _run_process(
+                        compile_command,
+                        workspace,
+                        _run_environment(),
+                        max(60, run_timeout),
+                    )
+                except OSError as error:
+                    response.update(phase="compile", exitCode=1, stderr=str(error))
+                    return response
+                if compiled["timedOut"] or compiled["exitCode"] != 0:
+                    response.update(phase="compile", **compiled)
+                    return response
+
+            command = language["run"](info, workspace, language["file"])
+            try:
+                result = _run_process(
+                    command, workspace, _run_environment(), run_timeout, stdin_text
+                )
+            except OSError as error:
+                response.update(exitCode=1, stderr=str(error))
+                return response
+            response.update(result)
+    return response
+
+
+def _run_environment():
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "PYTHONIOENCODING": "utf-8",
+            "PYTHONUNBUFFERED": "1",
+            "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
+            "DOTNET_NOLOGO": "1",
+        }
+    )
+    return environment
+
+
+def _error_response(handler, status, message):
+    body = json.dumps({"error": message}).encode("utf-8")
+    handler.send_response(status)
+    handler.send_header("Content-Type", "application/json; charset=utf-8")
+    handler.send_header("Content-Length", str(len(body)))
+    handler.end_headers()
+    handler.wfile.write(body)
+
+
+def _plain_response(handler, status, message):
+    body = message.encode("utf-8")
+    handler.send_response(status)
+    handler.send_header("Content-Type", "text/plain; charset=utf-8")
+    handler.send_header("Content-Length", str(len(body)))
+    handler.end_headers()
+    handler.wfile.write(body)
+
+
+def _json_response(handler, value, status=200):
+    body = json.dumps(value).encode("utf-8")
+    handler.send_response(status)
+    handler.send_header("Content-Type", "application/json; charset=utf-8")
+    handler.send_header("Content-Length", str(len(body)))
+    handler.end_headers()
+    handler.wfile.write(body)
 
 
 class LocalServer(ThreadingHTTPServer):
@@ -14,6 +569,111 @@ class LocalServer(ThreadingHTTPServer):
 
 
 class Handler(SimpleHTTPRequestHandler):
+    def __init__(self, *args, run_token, run_timeout, **kwargs):
+        self.run_token = run_token
+        self.run_timeout = run_timeout
+        super().__init__(*args, **kwargs)
+
+    def parse_request(self):
+        if not super().parse_request():
+            return False
+        port = self.server.server_port
+        if self.headers.get("Host") not in (
+            "127.0.0.1:{}".format(port),
+            "localhost:{}".format(port),
+        ):
+            _plain_response(self, 403, "Forbidden")
+            return False
+        path = urlsplit(self.path).path
+        origin = self.headers.get("Origin")
+        if path.startswith("/api/") and origin is not None and origin not in (
+            "http://127.0.0.1:{}".format(port),
+            "http://localhost:{}".format(port),
+        ):
+            _plain_response(self, 403, "Forbidden")
+            return False
+        return True
+
+    def do_GET(self):
+        path = urlsplit(self.path).path
+        if path == "/ide":
+            self.send_response(302)
+            self.send_header("Location", "/ide.html")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        if path == "/ide.html":
+            ide_file = Path(__file__).resolve().parent / "dist" / "ide.html"
+            try:
+                content = ide_file.read_text(encoding="utf-8")
+            except OSError:
+                return super().do_GET()
+            content = content.replace("__ROOM_REMIX_RUN_TOKEN__", self.run_token)
+            body = content.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if path == "/api/languages":
+            _json_response(self, {"languages": _language_listing()})
+            return
+        return super().do_GET()
+
+    def do_POST(self):
+        if urlsplit(self.path).path != "/api/run":
+            return super().do_POST()
+        request_token = self.headers.get("X-Room-Remix-Token")
+        if request_token is None or not secrets.compare_digest(request_token, self.run_token):
+            _error_response(self, 403, "Invalid run token.")
+            return
+        content_type = self.headers.get("Content-Type", "")
+        if not content_type.lower().startswith("application/json"):
+            _error_response(self, 415, "Content-Type must be application/json.")
+            return
+        content_length = self.headers.get("Content-Length")
+        try:
+            length = int(content_length)
+        except (TypeError, ValueError):
+            _error_response(self, 400, "A valid Content-Length is required.")
+            return
+        if length < 0:
+            _error_response(self, 400, "A valid Content-Length is required.")
+            return
+        if length > BODY_LIMIT:
+            _error_response(self, 413, "Request body is too large.")
+            return
+        try:
+            payload = json.loads(self.rfile.read(length))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            _error_response(self, 400, "Request body must be valid JSON.")
+            return
+        if not isinstance(payload, dict) or not all(
+            isinstance(payload.get(key), str) for key in ("language", "code", "stdin")
+        ):
+            _error_response(self, 400, "language, code, and stdin must be strings.")
+            return
+        language = LANGUAGES_BY_ID.get(payload["language"])
+        if language is None:
+            _error_response(self, 400, "Unknown language.")
+            return
+        info = _resolve_language(language)
+        if info is None:
+            _error_response(
+                self,
+                409,
+                "{} isn't installed on this computer. {}".format(
+                    language["name"], language["install"]
+                ),
+            )
+            return
+        _json_response(
+            self,
+            _run_code(language, info, payload["code"], payload["stdin"], self.run_timeout),
+        )
+
     def log_message(self, format, *args):
         # Keep the terminal focused on the launch URL and stop instruction.
         if len(args) < 2 or str(args[1]) not in ("200", "304"):
@@ -24,23 +684,36 @@ def main():
     parser = argparse.ArgumentParser(description="Open a tiny, interactive room-design playground.")
     parser.add_argument("--room", choices=("studio", "tiny-bedroom"), default="studio", help="choose a fictional room (default: studio)")
     parser.add_argument("--port", type=int, default=0, help="choose a local port; 0 finds an available port (default)")
-    parser.add_argument("--no-browser", action="store_true", help="print the link without opening your browser")
+    parser.add_argument("--no-browser", action="store_true", help="print both links without opening a browser")
+    parser.add_argument("--ide", action="store_true", help="open the coding-challenge editor in your browser")
+    parser.add_argument("--run-timeout", type=float, default=10, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if not 0 <= args.port <= 65535:
         parser.error("--port must be between 0 and 65535")
+    if not math.isfinite(args.run_timeout) or args.run_timeout <= 0:
+        parser.error("--run-timeout must be greater than 0")
     assets = Path(__file__).resolve().parent / "dist"
-    handler = functools.partial(Handler, directory=str(assets))
+    run_token = secrets.token_urlsafe(24)
+    handler = functools.partial(
+        Handler,
+        directory=str(assets),
+        run_token=run_token,
+        run_timeout=args.run_timeout,
+    )
     try:
         server = LocalServer(("127.0.0.1", args.port), handler)
     except OSError as error:
         parser.exit(1, "Could not start the local server: {}\nTry again without --port to use an available port.\n".format(error))
     url = "http://127.0.0.1:{}/?room={}".format(server.server_port, args.room)
+    code_url = "http://127.0.0.1:{}/ide.html".format(server.server_port)
     print("\n  ROOM REMIX\n  A tiny room-design playground.\n")
-    print("  Open: {}\n".format(url), flush=True)
+    print("  Open: {}".format(url))
+    print("  Code: {}\n".format(code_url), flush=True)
     print("  Drag a piece. Change the palette. Make yourself at home.")
     print("  Press Ctrl+C here to stop.\n", flush=True)
     if not args.no_browser:
-        browser_timer = threading.Timer(0.3, lambda: webbrowser.open(url))
+        browser_url = code_url if args.ide else url
+        browser_timer = threading.Timer(0.3, lambda: webbrowser.open(browser_url))
         browser_timer.daemon = True
         browser_timer.start()
     try:
