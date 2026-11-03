@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="A plain local code editor for the Room Remix coding challenge."
+    />
+    <meta name="color-scheme" content="light" />
+    <meta name="room-remix-run-token" content="__ROOM_REMIX_RUN_TOKEN__" />
+    <title>Room Remix — Code</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232d382f'/%3E%3Cpath d='M7 12 16 7l9 5v10l-9 5-9-5zM7 12l9 5 9-5M16 17v10' fill='none' stroke='%23f1e7d8' stroke-width='2'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="ide.css" />
+    <script defer src="ide.js"></script>
+  </head>
+  <body class="ide-page">
+    <header class="topbar">
+      <a class="brand" href="./" aria-label="Room Remix home"
+        ><span class="brand-mark" aria-hidden="true">▱</span>room remix<span
+          class="brand-dot"
+          >.</span
+        ></a
+      >
+      <nav class="app-nav" aria-label="Room Remix">
+        <a href="./">Room</a><a href="ide.html" aria-current="page">Code</a>
+      </nav>
+      <span class="edition">THE CODE DESK <span>№ 002</span></span>
+    </header>
+    <main class="ide-shell">
+      <aside class="challenge-panel" aria-labelledby="challenge-title">
+        <div class="challenge-heading">
+          <div>
+            <span class="eyebrow">THE CHALLENGE</span>
+            <h1 id="challenge-title">Read it. Solve it.</h1>
+          </div>
+          <button id="clear-challenge" class="text-button" type="button">
+            Clear
+          </button>
+        </div>
+        <textarea
+          id="challenge"
+          class="challenge-text"
+          spellcheck="false"
+          aria-labelledby="challenge-title"
+          placeholder="Paste the challenge from your interviewer here."
+        ></textarea>
+        <details class="keyboard-guide">
+          <summary>Editor keys</summary>
+          <p>
+            <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Enter</kbd> runs your code.
+            <kbd>Tab</kbd> and <kbd>Shift</kbd> + <kbd>Tab</kbd> indent and
+            outdent. Press <kbd>Esc</kbd> then <kbd>Tab</kbd> to leave the
+            editor. There's no autocomplete — it's just you and the code.
+          </p>
+        </details>
+      </aside>
+      <section class="code-workspace" aria-label="Code editor">
+        <div class="code-toolbar">
+          <div class="language-picker">
+            <label for="language">Language</label
+            ><select id="language"></select>
+          </div>
+          <span id="language-status" class="language-status" role="status"
+            >Checking your computer…</span
+          >
+          <div class="toolbar-actions">
+            <button
+              id="reset-code"
+              class="ghost-button"
+              type="button"
+              aria-label="Starter code"
+              title="Replace your code with the starter code"
+            >
+              ↺ <span>Starter code</span>
+            </button>
+            <button id="copy-code" class="ghost-button" type="button">
+              Copy
+            </button>
+            <button
+              id="run"
+              class="run-button"
+              type="button"
+              title="Run (Ctrl+Enter / ⌘+Enter)"
+              disabled
+            >
+              ▶ Run
+            </button>
+          </div>
+        </div>
+        <div class="editor" id="editor">
+          <div class="gutter" aria-hidden="true">
+            <pre id="gutter">1</pre>
+          </div>
+          <div class="code-area">
+            <pre class="highlight" aria-hidden="true"><code id="highlight"></code></pre>
+            <textarea
+              id="code"
+              wrap="off"
+              spellcheck="false"
+              autocomplete="off"
+              autocorrect="off"
+              autocapitalize="off"
+              data-gramm="false"
+              data-enable-grammarly="false"
+              aria-label="Code"
+              aria-describedby="cursor-position"
+            ></textarea>
+          </div>
+        </div>
+        <div class="editor-status">
+          <span id="cursor-position">Ln 1, Col 1</span>
+          <span id="indent-info">Spaces: 4</span>
+        </div>
+        <div class="io-panels">
+          <section id="stdin-panel" class="io-panel" aria-labelledby="stdin-label">
+            <div class="io-heading">
+              <label id="stdin-label" for="stdin" class="eyebrow"
+                >INPUT · STDIN</label
+              >
+            </div>
+            <textarea
+              id="stdin"
+              class="io-text"
+              spellcheck="false"
+              placeholder="Text here is your program's input."
+            ></textarea>
+          </section>
+          <section class="io-panel" aria-labelledby="output-label">
+            <div class="io-heading">
+              <span id="output-label" class="eyebrow">OUTPUT</span
+              ><span id="run-status" class="run-status" role="status"></span>
+            </div>
+            <pre id="output" class="io-text output" tabindex="0"><span class="output-hint">Press Run to see what your program prints.</span></pre>
+          </section>
+        </div>
+      </section>
+    </main>
+    <noscript
+      ><p class="noscript">
+        The code editor needs JavaScript enabled in your browser.
+      </p></noscript
+    >
+  </body>
+</html>

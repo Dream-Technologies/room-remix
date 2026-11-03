@@ -83,10 +83,19 @@ On Windows, use `py -3 demo.py --help`.
 |---|---|
 | `--room studio` | Opens the sunlit studio (the default). |
 | `--room tiny-bedroom` | Opens the bedroom. |
-| `--no-browser` | Prints the link without opening a browser. |
+| `--no-browser` | Prints both links without opening a browser. |
+| `--ide` | Opens the coding-challenge editor. |
 | `--port 8000` | Uses a specific local port. By default, the launcher finds an available port. |
 
 When you're finished, press **Ctrl+C** in the terminal to stop the program. No source-file changes, commits, or submissions are required to explore the demo.
+
+## Coding challenge
+
+Open the editor directly with `python3 demo.py --ide` on macOS or Linux, or `py -3 demo.py --ide` in Windows PowerShell. You can also click **Code** in the room page header.
+
+Paste the challenge your interviewer gives you into the **Challenge** panel and choose **Python**, **JavaScript**, **TypeScript**, or **Other**. Python runs with the Python you already need to launch the demo. JavaScript and TypeScript run in your browser, so no other runtimes are needed. **Other** is for writing in any language that you want to talk through instead of running.
+
+For runnable languages, the **Input** box is standard input. Press **Run** (**Ctrl+Enter** or **Cmd+Enter**) to see the output. There is no autocomplete or AI. Your work stays in this browser and survives a refresh. Use **Copy** if you want to keep it somewhere else.
 
 ## If something doesn't work
 
@@ -106,13 +115,23 @@ room-remix/
     index.html        Design desk and semantic controls
     styles.css        Responsive layout
     app.js            Canvas geometry and interactions
+    ide.html          Coding-challenge editor
+    ide.css           Editor layout and styles
+    ide.js            Editor and runner controls
+    js-runner.js      Browser JavaScript and TypeScript runner
+    vendor/
+      sucrase.js      Offline TypeScript transpiler
+      sucrase-entry.js Sucrase transform export for rebuilding
+      README.md       Vendored transpiler version and rebuild command
+      LICENSE         Sucrase MIT license
   docs/
     room-remix.png    Screenshot of the demo
   tests/
     test_launcher.py  Standard-library launcher checks
+    test_ide.py       Coding-editor and runner checks
   LICENSE             MIT
 ```
 
 The floorplans, dimensions, palettes, and geometric furniture are invented specifically for this demo. The rendering and interactions are implemented independently. This repository contains no production app code, real catalog assets, customer projects, private datasets, or internal design algorithms. It makes no network requests after the page loads from the local server and uses no analytics or external assets.
 
-For contributors, run the launcher checks with `python3 -m unittest discover -s tests -v` (Windows: `py -3 -m unittest discover -s tests -v`). Optional browser-agent hooks use feature detection and don't affect regular browsers.
+For contributors, run the tests with `python3 -m unittest discover -s tests -v` (Windows: `py -3 -m unittest discover -s tests -v`). Optional browser-agent hooks use feature detection and don't affect regular browsers.
