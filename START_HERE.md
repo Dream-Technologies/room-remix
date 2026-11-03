@@ -7,7 +7,7 @@ A tiny, interactive interior-design playground. Rearrange a sunlit studio or a l
 ## What you need
 
 - Git.
-- Python 3.10 or newer.
+- Python 3.9 or newer.
 - A current browser, such as Chrome, Edge, Firefox, or Safari.
 
 Everything else is included. There are no packages to install, accounts to create, or API keys to configure. After cloning, the demo works offline.
@@ -19,7 +19,7 @@ Check your setup before the session:
 | Git | `git --version` | `git --version` |
 | Python | `python3 --version` | `py -3 --version` |
 
-If either command is missing, install [Git](https://git-scm.com/downloads) or [Python](https://www.python.org/downloads/) first. Git and Python are explicit prerequisites; they may not already be installed on your laptop. On Windows, the Python installer should enable the `py` launcher. If you have a working `python --version` showing Python 3.10+, you can use `python` instead of `py -3` below.
+If either command is missing, install [Git](https://git-scm.com/downloads) or [Python](https://www.python.org/downloads/) first. Git and Python are explicit prerequisites; they may not already be installed on your laptop. On Windows, the Python installer should enable the `py` launcher. If you have a working `python --version` showing Python 3.9+, you can use `python` instead of `py -3` below.
 
 ## Launch the playground
 
