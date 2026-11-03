@@ -9,6 +9,7 @@ import os
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import secrets
+import shutil
 import signal
 import subprocess
 import sys
@@ -29,7 +30,7 @@ LANGUAGE_TABLE = [
         "id": "python",
         "name": "Python",
         "file": "main.py",
-        "install": "Install Python 3.10+ from https://www.python.org/downloads",
+        "install": "Install Python 3.9+ from https://www.python.org/downloads",
     },
 ]
 LANGUAGES_BY_ID = {language["id"]: language for language in LANGUAGE_TABLE}
@@ -194,9 +195,8 @@ def _run_code(language, code, stdin_text, run_timeout):
         "truncated": False,
     }
     with RUN_LOCK:
-        with tempfile.TemporaryDirectory(
-            prefix="room-remix-run-", ignore_cleanup_errors=True
-        ) as directory:
+        directory = tempfile.mkdtemp(prefix="room-remix-run-")
+        try:
             workspace = Path(directory)
             with open(workspace / language["file"], "w", encoding="utf-8", newline="") as source:
                 source.write(code)
@@ -212,6 +212,8 @@ def _run_code(language, code, stdin_text, run_timeout):
                 response.update(exitCode=1, stderr=str(error))
                 return response
             response.update(result)
+        finally:
+            shutil.rmtree(directory, ignore_errors=True)
     return response
 
 
