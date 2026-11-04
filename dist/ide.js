@@ -117,9 +117,13 @@ const tokenMeta = document.querySelector('meta[name="room-remix-run-token"]');
 const runToken = tokenMeta ? tokenMeta.content : "";
 const hasToken = runToken && !runToken.startsWith("__");
 
-const STORAGE_KEY = "room-remix.code-desk.v2";
-const saved = loadSaved();
-let current = BY_ID[saved.language] ? BY_ID[saved.language] : LANGUAGES[0];
+// Work is saved per question; the unlocked question lives only in this tab's session.
+const STORAGE_PREFIX = "room-remix.code-desk.v3.";
+const UNLOCKED_KEY = "room-remix.code-desk.unlocked";
+let storageKey = "";
+let saved = {};
+let current = LANGUAGES[0];
+let deskStarted = false;
 let available = {};
 let lineCount = 0;
 let escapeArmed = false;
@@ -129,7 +133,7 @@ let running = false;
 
 function loadSaved() {
   try {
-    const value = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+    const value = JSON.parse(localStorage.getItem(storageKey) || "{}");
     return value && typeof value === "object" ? value : {};
   } catch (_) {
     return {};
@@ -143,13 +147,13 @@ function save() {
 
 function saveNow() {
   clearTimeout(saveTimer);
+  if (!deskStarted) return;
   saved.language = current.id;
   saved.codes = saved.codes || {};
   saved.codes[current.id] = code.value;
   saved.stdin = stdin.value;
-  saved.challenge = challenge.value;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
+    localStorage.setItem(storageKey, JSON.stringify(saved));
   } catch (_) {
     // Storage can be full or disabled; the editor keeps working without it.
   }
@@ -514,7 +518,6 @@ document.addEventListener("selectionchange", () => {
   if (document.activeElement === code) updateCursor();
 });
 stdin.addEventListener("input", save);
-challenge.addEventListener("input", save);
 addEventListener("pagehide", saveNow);
 languageSelect.addEventListener("change", () => setLanguage(languageSelect.value));
 runButton.addEventListener("click", run);
@@ -525,23 +528,104 @@ $("reset-code").addEventListener("click", () => {
   replaceRange(0, code.value.length, current.starter, 0);
   code.scrollTop = 0;
 });
-$("clear-challenge").addEventListener("click", () => {
-  if (challenge.value && !confirm("Clear the challenge text?")) return;
-  challenge.value = "";
-  save();
-  challenge.focus();
+$("switch-question").addEventListener("click", () => {
+  if (!confirm("Lock this question and choose again? Your code is kept on this computer.")) return;
+  saveNow();
+  try {
+    sessionStorage.removeItem(UNLOCKED_KEY);
+  } catch (_) {
+    // Nothing stored; reloading still shows the gate.
+  }
+  location.reload();
 });
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+  if (deskStarted && event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
     event.preventDefault();
     if (current.id !== "other") run();
   }
 });
 
-challenge.value = typeof saved.challenge === "string" ? saved.challenge : "";
-stdin.value = typeof saved.stdin === "string" ? saved.stdin : "";
-populateLanguages();
-setLanguage(current.id, { keepCode: true });
-new ResizeObserver(syncScroll).observe(code);
-if (hasToken) loadLanguages();
-else updateLanguageStatus();
+function startDesk(track, question) {
+  storageKey = STORAGE_PREFIX + track;
+  saved = loadSaved();
+  BY_ID.python.starter = question.starter;
+  current = BY_ID[saved.language] || BY_ID.python;
+  $("challenge-eyebrow").textContent = `THE CHALLENGE · ${question.title.toUpperCase()}`;
+  challenge.value = question.prompt;
+  stdin.value = typeof saved.stdin === "string" ? saved.stdin : "";
+  $("question-gate").hidden = true;
+  document.querySelector(".ide-shell").hidden = false;
+  deskStarted = true;
+  populateLanguages();
+  setLanguage(current.id, { keepCode: true });
+  new ResizeObserver(syncScroll).observe(code);
+  if (hasToken) loadLanguages();
+  else updateLanguageStatus();
+  code.focus();
+}
+
+function setupGate() {
+  const pick = $("gate-pick");
+  const form = $("gate-unlock");
+  const password = $("gate-password");
+  const error = $("gate-error");
+  const submit = $("gate-submit");
+  let track = "";
+
+  try {
+    const remembered = JSON.parse(sessionStorage.getItem(UNLOCKED_KEY) || "null");
+    if (remembered && QUESTION_TRACKS[remembered.track] && remembered.question) {
+      startDesk(remembered.track, remembered.question);
+      return;
+    }
+  } catch (_) {
+    // Fall through to the gate.
+  }
+
+  for (const button of document.querySelectorAll(".track-button")) {
+    button.addEventListener("click", () => {
+      track = button.dataset.track;
+      $("gate-track").textContent = QUESTION_TRACKS[track].toUpperCase();
+      error.textContent = "";
+      password.value = "";
+      pick.hidden = true;
+      form.hidden = false;
+      password.focus();
+    });
+  }
+  $("gate-back").addEventListener("click", () => {
+    form.hidden = true;
+    pick.hidden = false;
+    pick.querySelector(`[data-track="${track}"]`).focus();
+  });
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    submit.disabled = true;
+    submit.textContent = "Unlocking…";
+    error.textContent = "";
+    try {
+      const response = await fetch(`questions/${track}.json`, { cache: "no-store" });
+      if (!response.ok) throw new Error("Can't load the question. Is demo.py still running?");
+      const question = await unlockQuestion(await response.json(), password.value, track);
+      if (!question) {
+        error.textContent = "That password didn't work. Try again.";
+        password.select();
+        return;
+      }
+      try {
+        sessionStorage.setItem(UNLOCKED_KEY, JSON.stringify({ track, question }));
+      } catch (_) {
+        // Without session storage a reload simply asks again.
+      }
+      password.value = "";
+      startDesk(track, question);
+    } catch (failure) {
+      error.textContent = failure.message || "Couldn't unlock the question.";
+    } finally {
+      submit.disabled = false;
+      submit.textContent = "Unlock";
+    }
+  });
+}
+
+setupGate();

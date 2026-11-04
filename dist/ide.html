@@ -16,6 +16,7 @@
     />
     <link rel="stylesheet" href="styles.css" />
     <link rel="stylesheet" href="ide.css" />
+    <script defer src="question-lock.js"></script>
     <script defer src="ide.js"></script>
   </head>
   <body class="ide-page">
@@ -31,23 +32,59 @@
       </nav>
       <span class="edition">THE CODE DESK <span>№ 002</span></span>
     </header>
-    <main class="ide-shell">
+    <main id="question-gate" class="question-gate">
+      <div class="gate-card">
+        <div id="gate-pick">
+          <span class="eyebrow">THE CODE DESK</span>
+          <h1 class="gate-title">Choose your interview.</h1>
+          <p class="gate-note">Your interviewer will tell you which one.</p>
+          <div class="gate-tracks">
+            <button class="track-button" type="button" data-track="ml">ML coding</button>
+            <button class="track-button" type="button" data-track="swe">Software engineering</button>
+          </div>
+        </div>
+        <form id="gate-unlock" class="gate-unlock" hidden>
+          <span id="gate-track" class="eyebrow"></span>
+          <h1 class="gate-title">Ask your interviewer for the password.</h1>
+          <label for="gate-password" class="gate-label">Password</label>
+          <input
+            id="gate-password"
+            type="password"
+            autocomplete="off"
+            spellcheck="false"
+            aria-describedby="gate-error"
+            required
+          />
+          <p id="gate-error" class="gate-error" role="alert"></p>
+          <div class="gate-actions">
+            <button id="gate-back" class="ghost-button" type="button">Back</button>
+            <button id="gate-submit" class="run-button" type="submit">Unlock</button>
+          </div>
+        </form>
+      </div>
+    </main>
+    <main class="ide-shell" hidden>
       <aside class="challenge-panel" aria-labelledby="challenge-title">
         <div class="challenge-heading">
           <div>
-            <span class="eyebrow">THE CHALLENGE</span>
+            <span id="challenge-eyebrow" class="eyebrow">THE CHALLENGE</span>
             <h1 id="challenge-title">Read it. Solve it.</h1>
           </div>
-          <button id="clear-challenge" class="text-button" type="button">
-            Clear
+          <button
+            id="switch-question"
+            class="text-button"
+            type="button"
+            title="Lock this question and choose again"
+          >
+            Switch
           </button>
         </div>
         <textarea
           id="challenge"
           class="challenge-text"
           spellcheck="false"
+          readonly
           aria-labelledby="challenge-title"
-          placeholder="Paste the challenge from your interviewer here."
         ></textarea>
         <details class="keyboard-guide">
           <summary>Editor keys</summary>
