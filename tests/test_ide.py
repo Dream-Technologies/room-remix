@@ -373,6 +373,68 @@ if (lines.length > 0) console.log(\`Read \${lines.length} line(s) of input.\`);`
         self.assertTrue(any(line.startswith("  Open: http://127.0.0.1:") for line in output))
         self.assertTrue(any(line.startswith("  Code: http://127.0.0.1:") for line in output))
 
+    def test_sealed_questions_are_served_and_hold_no_plaintext(self):
+        for track in ("ml", "swe"):
+            status, _, body = self.request("GET", "/questions/{}.json".format(track))
+            self.assertEqual(status, 200)
+            sealed = json.loads(body)
+            self.assertEqual(sealed["version"], 1)
+            self.assertEqual(sealed["track"], track)
+            self.assertGreaterEqual(sealed["kdf"]["iterations"], 600_000)
+            for word in ("softmax", "numpy", "def ", "import ", "question"):
+                self.assertNotIn(word.encode(), body)
+        self.assertIn('id="question-gate"', self.ide_html)
+        self.assertIn('data-track="ml"', self.ide_html)
+        self.assertIn('data-track="swe"', self.ide_html)
+
+    def test_question_sources_are_never_committed(self):
+        result = subprocess.run(
+            ["git", "check-ignore", "-q", "private/questions/ml/prompt.md"],
+            cwd=str(ROOT),
+        )
+        self.assertEqual(result.returncode, 0, "private/ must stay git-ignored.")
+
+    def test_wrong_password_does_not_unlock(self):
+        script = r"""
+const { unlockQuestion } = require(process.env.LOCK);
+const fs = require("node:fs");
+(async () => {
+  const out = {};
+  for (const track of ["ml", "swe"]) {
+    const sealed = JSON.parse(fs.readFileSync(`${process.env.QUESTIONS}/${track}.json`, "utf8"));
+    out[track] = {
+      wrong: await unlockQuestion(sealed, "not-the-password", track),
+      swapped: await unlockQuestion({ ...sealed, track: track === "ml" ? "swe" : "ml" },
+        "not-the-password", track === "ml" ? "swe" : "ml"),
+    };
+    if (process.env.QUESTION_PASSWORD) {
+      const question = await unlockQuestion(sealed, process.env.QUESTION_PASSWORD, track);
+      out[track].title = question && question.title;
+    }
+  }
+  process.stdout.write(JSON.stringify(out));
+})().catch((error) => { process.stderr.write(String(error.stack)); process.exitCode = 1; });
+"""
+        environment = os.environ.copy()
+        environment["LOCK"] = os.path.join(str(ROOT), "dist", "question-lock.js")
+        environment["QUESTIONS"] = os.path.join(str(ROOT), "dist", "questions")
+        result = subprocess.run(
+            [shutil.which("node"), "-e", script],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env=environment,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        results = json.loads(result.stdout)
+        for track in ("ml", "swe"):
+            self.assertIsNone(results[track]["wrong"])
+            self.assertIsNone(results[track]["swapped"])
+        # Set QUESTION_PASSWORD to also check that the real password unlocks both.
+        if os.environ.get("QUESTION_PASSWORD"):
+            self.assertEqual(results["ml"]["title"], "ML coding")
+            self.assertEqual(results["swe"]["title"], "Software engineering")
+
 
 if __name__ == "__main__":
     unittest.main()
