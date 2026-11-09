@@ -528,16 +528,6 @@ $("reset-code").addEventListener("click", () => {
   replaceRange(0, code.value.length, current.starter, 0);
   code.scrollTop = 0;
 });
-$("switch-question").addEventListener("click", () => {
-  if (!confirm("Lock this question and choose again? Your code is kept on this computer.")) return;
-  saveNow();
-  try {
-    sessionStorage.removeItem(UNLOCKED_KEY);
-  } catch (_) {
-    // Nothing stored; reloading still shows the gate.
-  }
-  location.reload();
-});
 document.addEventListener("keydown", (event) => {
   if (deskStarted && event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
     event.preventDefault();
@@ -564,17 +554,48 @@ function startDesk(track, question) {
   code.focus();
 }
 
+const apiMeta = document.querySelector('meta[name="room-remix-interview-api"]');
+const interviewApi = apiMeta && !apiMeta.content.startsWith("__") ? apiMeta.content.replace(/\/$/, "") : "";
+const TRACKS = new Set(["ml", "swe"]);
+
+// Spends the one-time code with Dream's api and returns its question.
+async function redeemCode(value) {
+  if (!interviewApi) throw new Error("Open this page from the link printed by demo.py.");
+  let response;
+  try {
+    response = await fetch(`${interviewApi}/interview/redeem`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: value }),
+    });
+  } catch (_) {
+    throw new Error("Can't reach Dream. Check your internet connection and try again.");
+  }
+  const body = await response.json().catch(() => ({}));
+  if (response.status === 429) throw new Error("Too many tries. Wait a minute and try again.");
+  if (!response.ok) {
+    throw new Error(
+      response.status === 403 && typeof body.error === "string"
+        ? body.error
+        : `Dream answered ${response.status}. Ask your interviewer for help.`,
+    );
+  }
+  if (!TRACKS.has(body.track) || typeof body.prompt !== "string" || typeof body.starter !== "string") {
+    throw new Error("Dream sent an unexpected answer. Ask your interviewer for help.");
+  }
+  return body;
+}
+
 function setupGate() {
-  const pick = $("gate-pick");
   const form = $("gate-unlock");
-  const password = $("gate-password");
+  const input = $("gate-code");
   const error = $("gate-error");
   const submit = $("gate-submit");
-  let track = "";
 
+  // A reload in the same tab keeps the question: the code itself is spent.
   try {
     const remembered = JSON.parse(sessionStorage.getItem(UNLOCKED_KEY) || "null");
-    if (remembered && QUESTION_TRACKS[remembered.track] && remembered.question) {
+    if (remembered && TRACKS.has(remembered.track) && remembered.question) {
       startDesk(remembered.track, remembered.question);
       return;
     }
@@ -582,48 +603,27 @@ function setupGate() {
     // Fall through to the gate.
   }
 
-  for (const button of document.querySelectorAll(".track-button")) {
-    button.addEventListener("click", () => {
-      track = button.dataset.track;
-      $("gate-track").textContent = QUESTION_TRACKS[track].toUpperCase();
-      error.textContent = "";
-      password.value = "";
-      pick.hidden = true;
-      form.hidden = false;
-      password.focus();
-    });
-  }
-  $("gate-back").addEventListener("click", () => {
-    form.hidden = true;
-    pick.hidden = false;
-    pick.querySelector(`[data-track="${track}"]`).focus();
-  });
+  input.focus();
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     submit.disabled = true;
-    submit.textContent = "Unlocking…";
+    submit.textContent = "Opening…";
     error.textContent = "";
     try {
-      const response = await fetch(`questions/${track}.json`, { cache: "no-store" });
-      if (!response.ok) throw new Error("Can't load the question. Is demo.py still running?");
-      const question = await unlockQuestion(await response.json(), password.value, track);
-      if (!question) {
-        error.textContent = "That password didn't work. Try again.";
-        password.select();
-        return;
-      }
+      const question = await redeemCode(input.value.trim());
       try {
-        sessionStorage.setItem(UNLOCKED_KEY, JSON.stringify({ track, question }));
+        sessionStorage.setItem(UNLOCKED_KEY, JSON.stringify({ track: question.track, question }));
       } catch (_) {
-        // Without session storage a reload simply asks again.
+        // Without session storage a reload needs a new code.
       }
-      password.value = "";
-      startDesk(track, question);
+      input.value = "";
+      startDesk(question.track, question);
     } catch (failure) {
-      error.textContent = failure.message || "Couldn't unlock the question.";
+      error.textContent = failure.message || "Couldn't open the question.";
+      input.select();
     } finally {
       submit.disabled = false;
-      submit.textContent = "Unlock";
+      submit.textContent = "Open question";
     }
   });
 }

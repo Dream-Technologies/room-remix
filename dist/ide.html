@@ -9,6 +9,7 @@
     />
     <meta name="color-scheme" content="light" />
     <meta name="room-remix-run-token" content="__ROOM_REMIX_RUN_TOKEN__" />
+    <meta name="room-remix-interview-api" content="__ROOM_REMIX_INTERVIEW_API__" />
     <title>Room Remix — Code</title>
     <link
       rel="icon"
@@ -16,7 +17,6 @@
     />
     <link rel="stylesheet" href="styles.css" />
     <link rel="stylesheet" href="ide.css" />
-    <script defer src="question-lock.js"></script>
     <script defer src="ide.js"></script>
   </head>
   <body class="ide-page">
@@ -34,31 +34,27 @@
     </header>
     <main id="question-gate" class="question-gate">
       <div class="gate-card">
-        <div id="gate-pick">
+        <form id="gate-unlock" class="gate-unlock">
           <span class="eyebrow">THE CODE DESK</span>
-          <h1 class="gate-title">Choose your interview.</h1>
-          <p class="gate-note">Your interviewer will tell you which one.</p>
-          <div class="gate-tracks">
-            <button class="track-button" type="button" data-track="ml">ML coding</button>
-            <button class="track-button" type="button" data-track="swe">Software engineering</button>
-          </div>
-        </div>
-        <form id="gate-unlock" class="gate-unlock" hidden>
-          <span id="gate-track" class="eyebrow"></span>
-          <h1 class="gate-title">Ask your interviewer for the password.</h1>
-          <label for="gate-password" class="gate-label">Password</label>
+          <h1 class="gate-title">Enter your interview code.</h1>
+          <p class="gate-note">
+            Your interviewer will give you a code like K7QF2-M9XRT. It works
+            once and opens your question.
+          </p>
+          <label for="gate-code" class="gate-label">Interview code</label>
           <input
-            id="gate-password"
-            type="password"
+            id="gate-code"
+            type="text"
             autocomplete="off"
+            autocapitalize="characters"
             spellcheck="false"
+            maxlength="64"
             aria-describedby="gate-error"
             required
           />
           <p id="gate-error" class="gate-error" role="alert"></p>
           <div class="gate-actions">
-            <button id="gate-back" class="ghost-button" type="button">Back</button>
-            <button id="gate-submit" class="run-button" type="submit">Unlock</button>
+            <button id="gate-submit" class="run-button" type="submit">Open question</button>
           </div>
         </form>
       </div>
@@ -70,14 +66,6 @@
             <span id="challenge-eyebrow" class="eyebrow">THE CHALLENGE</span>
             <h1 id="challenge-title">Read it. Solve it.</h1>
           </div>
-          <button
-            id="switch-question"
-            class="text-button"
-            type="button"
-            title="Lock this question and choose again"
-          >
-            Switch
-          </button>
         </div>
         <textarea
           id="challenge"

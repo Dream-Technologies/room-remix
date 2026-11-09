@@ -373,68 +373,42 @@ if (lines.length > 0) console.log(\`Read \${lines.length} line(s) of input.\`);`
         self.assertTrue(any(line.startswith("  Open: http://127.0.0.1:") for line in output))
         self.assertTrue(any(line.startswith("  Code: http://127.0.0.1:") for line in output))
 
-    def test_sealed_questions_are_served_and_hold_no_plaintext(self):
-        for track in ("ml", "swe"):
-            status, _, body = self.request("GET", "/questions/{}.json".format(track))
-            self.assertEqual(status, 200)
-            sealed = json.loads(body)
-            self.assertEqual(sealed["version"], 1)
-            self.assertEqual(sealed["track"], track)
-            self.assertGreaterEqual(sealed["kdf"]["iterations"], 600_000)
-            for word in ("softmax", "numpy", "def ", "import ", "question"):
-                self.assertNotIn(word.encode(), body)
-        self.assertIn('id="question-gate"', self.ide_html)
-        self.assertIn('data-track="ml"', self.ide_html)
-        self.assertIn('data-track="swe"', self.ide_html)
-
-    def test_question_sources_are_never_committed(self):
-        result = subprocess.run(
-            ["git", "check-ignore", "-q", "private/questions/ml/prompt.md"],
-            cwd=str(ROOT),
+    def test_code_page_redeems_codes_with_dream_api(self):
+        expected = os.environ.get("ROOM_REMIX_INTERVIEW_API") or "https://api.dreamhq.com"
+        self.assertIn(
+            '<meta name="room-remix-interview-api" content="{}" />'.format(expected),
+            self.ide_html,
         )
-        self.assertEqual(result.returncode, 0, "private/ must stay git-ignored.")
+        self.assertIn('id="gate-code"', self.ide_html)
+        self.assertIn("/interview/redeem", (ROOT / "dist" / "ide.js").read_text(encoding="utf-8"))
 
-    def test_wrong_password_does_not_unlock(self):
-        script = r"""
-const { unlockQuestion } = require(process.env.LOCK);
-const fs = require("node:fs");
-(async () => {
-  const out = {};
-  for (const track of ["ml", "swe"]) {
-    const sealed = JSON.parse(fs.readFileSync(`${process.env.QUESTIONS}/${track}.json`, "utf8"));
-    out[track] = {
-      wrong: await unlockQuestion(sealed, "not-the-password", track),
-      swapped: await unlockQuestion({ ...sealed, track: track === "ml" ? "swe" : "ml" },
-        "not-the-password", track === "ml" ? "swe" : "ml"),
-    };
-    if (process.env.QUESTION_PASSWORD) {
-      const question = await unlockQuestion(sealed, process.env.QUESTION_PASSWORD, track);
-      out[track].title = question && question.title;
-    }
-  }
-  process.stdout.write(JSON.stringify(out));
-})().catch((error) => { process.stderr.write(String(error.stack)); process.exitCode = 1; });
-"""
-        environment = os.environ.copy()
-        environment["LOCK"] = os.path.join(str(ROOT), "dist", "question-lock.js")
-        environment["QUESTIONS"] = os.path.join(str(ROOT), "dist", "questions")
+    def test_questions_never_ship_with_the_repo(self):
+        # The questions live in Dream's private api; only a one-time code opens one.
+        self.assertFalse((ROOT / "dist" / "questions").exists())
+        for path in (ROOT / "dist").rglob("*"):
+            if path.is_file() and path.suffix in (".html", ".js", ".css", ".json"):
+                text = path.read_text(encoding="utf-8", errors="replace")
+                for marker in ("cross_entropy_with_softmax", "Attend All Meetings"):
+                    self.assertNotIn(marker, text, str(path))
+
+    def test_interview_api_can_be_pointed_elsewhere(self):
+        with running_demo("--interview-api", "http://localhost:3000/") as (url, _):
+            port = int(url.split("/?")[0].rsplit(":", 1)[1])
+            connection = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+            try:
+                connection.request("GET", "/ide.html")
+                page = connection.getresponse().read().decode("utf-8")
+            finally:
+                connection.close()
+        self.assertIn('name="room-remix-interview-api" content="http://localhost:3000/"', page)
         result = subprocess.run(
-            [shutil.which("node"), "-e", script],
+            COMMAND + ["--no-browser", "--interview-api", "javascript:alert(1)"],
             capture_output=True,
             text=True,
-            timeout=60,
-            env=environment,
+            timeout=10,
         )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        results = json.loads(result.stdout)
-        for track in ("ml", "swe"):
-            self.assertIsNone(results[track]["wrong"])
-            self.assertIsNone(results[track]["swapped"])
-        # Set QUESTION_PASSWORD to also check that the real password unlocks both.
-        if os.environ.get("QUESTION_PASSWORD"):
-            self.assertEqual(results["ml"]["title"], "ML coding")
-            self.assertEqual(results["swe"]["title"], "Software engineering")
-
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--interview-api must be an http(s) URL", result.stderr)
 
 if __name__ == "__main__":
     unittest.main()

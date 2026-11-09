@@ -401,10 +401,9 @@ kbd {
   }
 }
 
-/* Question gate: pick a track, then unlock it with the interview password. */
+/* Question gate: a one-time interview code opens the question. */
 .ide-shell[hidden],
-.question-gate[hidden],
-.gate-unlock[hidden] {
+.question-gate[hidden] {
   display: none;
 }
 .question-gate {
@@ -429,28 +428,9 @@ kbd {
   line-height: 1.2;
 }
 .gate-note {
-  margin: 0 0 24px;
+  margin: 0 0 8px;
   color: var(--muted);
   font-size: 14px;
-}
-.gate-tracks {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-.track-button {
-  padding: 22px 16px;
-  border: 1px solid #dce0d2;
-  border-radius: 8px;
-  background: #fff;
-  color: var(--ink);
-  font-size: 16px;
-  font-weight: 700;
-  cursor: pointer;
-}
-.track-button:hover {
-  border-color: var(--ink);
-  background: #f1f0e7;
 }
 .gate-unlock {
   display: flex;
@@ -468,10 +448,11 @@ kbd {
   border-radius: 6px;
   background: #fff;
   color: var(--ink);
-  font: 15px var(--mono);
+  font: 18px var(--mono);
+  letter-spacing: 2px;
+  text-transform: uppercase;
 }
-.gate-unlock input:focus-visible,
-.track-button:focus-visible {
+.gate-unlock input:focus-visible {
   outline: 3px solid #bd6444;
   outline-offset: 2px;
 }
@@ -483,16 +464,13 @@ kbd {
 }
 .gate-actions {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 8px;
 }
 .challenge-text[readonly] {
   background: #fdfdf9;
 }
 @media (max-width: 520px) {
-  .gate-tracks {
-    grid-template-columns: 1fr;
-  }
   .gate-card {
     padding: 28px 20px 24px;
   }
