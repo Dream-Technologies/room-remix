@@ -117,9 +117,13 @@ const tokenMeta = document.querySelector('meta[name="room-remix-run-token"]');
 const runToken = tokenMeta ? tokenMeta.content : "";
 const hasToken = runToken && !runToken.startsWith("__");
 
-const STORAGE_KEY = "room-remix.code-desk.v2";
-const saved = loadSaved();
-let current = BY_ID[saved.language] ? BY_ID[saved.language] : LANGUAGES[0];
+// Work is saved per question; the unlocked question lives only in this tab's session.
+const STORAGE_PREFIX = "room-remix.code-desk.v3.";
+const UNLOCKED_KEY = "room-remix.code-desk.unlocked";
+let storageKey = "";
+let saved = {};
+let current = LANGUAGES[0];
+let deskStarted = false;
 let available = {};
 let lineCount = 0;
 let escapeArmed = false;
@@ -129,7 +133,7 @@ let running = false;
 
 function loadSaved() {
   try {
-    const value = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+    const value = JSON.parse(localStorage.getItem(storageKey) || "{}");
     return value && typeof value === "object" ? value : {};
   } catch (_) {
     return {};
@@ -143,13 +147,13 @@ function save() {
 
 function saveNow() {
   clearTimeout(saveTimer);
+  if (!deskStarted) return;
   saved.language = current.id;
   saved.codes = saved.codes || {};
   saved.codes[current.id] = code.value;
   saved.stdin = stdin.value;
-  saved.challenge = challenge.value;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
+    localStorage.setItem(storageKey, JSON.stringify(saved));
   } catch (_) {
     // Storage can be full or disabled; the editor keeps working without it.
   }
@@ -514,7 +518,6 @@ document.addEventListener("selectionchange", () => {
   if (document.activeElement === code) updateCursor();
 });
 stdin.addEventListener("input", save);
-challenge.addEventListener("input", save);
 addEventListener("pagehide", saveNow);
 languageSelect.addEventListener("change", () => setLanguage(languageSelect.value));
 runButton.addEventListener("click", run);
@@ -525,23 +528,104 @@ $("reset-code").addEventListener("click", () => {
   replaceRange(0, code.value.length, current.starter, 0);
   code.scrollTop = 0;
 });
-$("clear-challenge").addEventListener("click", () => {
-  if (challenge.value && !confirm("Clear the challenge text?")) return;
-  challenge.value = "";
-  save();
-  challenge.focus();
-});
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+  if (deskStarted && event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
     event.preventDefault();
     if (current.id !== "other") run();
   }
 });
 
-challenge.value = typeof saved.challenge === "string" ? saved.challenge : "";
-stdin.value = typeof saved.stdin === "string" ? saved.stdin : "";
-populateLanguages();
-setLanguage(current.id, { keepCode: true });
-new ResizeObserver(syncScroll).observe(code);
-if (hasToken) loadLanguages();
-else updateLanguageStatus();
+function startDesk(track, question) {
+  storageKey = STORAGE_PREFIX + track;
+  saved = loadSaved();
+  BY_ID.python.starter = question.starter;
+  current = BY_ID[saved.language] || BY_ID.python;
+  $("challenge-eyebrow").textContent = `THE CHALLENGE · ${question.title.toUpperCase()}`;
+  challenge.value = question.prompt;
+  stdin.value = typeof saved.stdin === "string" ? saved.stdin : "";
+  $("question-gate").hidden = true;
+  document.querySelector(".ide-shell").hidden = false;
+  deskStarted = true;
+  populateLanguages();
+  setLanguage(current.id, { keepCode: true });
+  new ResizeObserver(syncScroll).observe(code);
+  if (hasToken) loadLanguages();
+  else updateLanguageStatus();
+  code.focus();
+}
+
+const apiMeta = document.querySelector('meta[name="room-remix-interview-api"]');
+const interviewApi = apiMeta && !apiMeta.content.startsWith("__") ? apiMeta.content.replace(/\/$/, "") : "";
+const TRACKS = new Set(["ml", "swe"]);
+
+// Spends the one-time code with Dream's api and returns its question.
+async function redeemCode(value) {
+  if (!interviewApi) throw new Error("Open this page from the link printed by demo.py.");
+  let response;
+  try {
+    response = await fetch(`${interviewApi}/interview/redeem`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: value }),
+    });
+  } catch (_) {
+    throw new Error("Can't reach Dream. Check your internet connection and try again.");
+  }
+  const body = await response.json().catch(() => ({}));
+  if (response.status === 429) throw new Error("Too many tries. Wait a minute and try again.");
+  if (!response.ok) {
+    throw new Error(
+      response.status === 403 && typeof body.error === "string"
+        ? body.error
+        : `Dream answered ${response.status}. Ask your interviewer for help.`,
+    );
+  }
+  if (!TRACKS.has(body.track) || typeof body.prompt !== "string" || typeof body.starter !== "string") {
+    throw new Error("Dream sent an unexpected answer. Ask your interviewer for help.");
+  }
+  return body;
+}
+
+function setupGate() {
+  const form = $("gate-unlock");
+  const input = $("gate-code");
+  const error = $("gate-error");
+  const submit = $("gate-submit");
+
+  // A reload in the same tab keeps the question: the code itself is spent.
+  try {
+    const remembered = JSON.parse(sessionStorage.getItem(UNLOCKED_KEY) || "null");
+    if (remembered && TRACKS.has(remembered.track) && remembered.question) {
+      startDesk(remembered.track, remembered.question);
+      return;
+    }
+  } catch (_) {
+    // Fall through to the gate.
+  }
+
+  input.focus();
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    submit.disabled = true;
+    submit.textContent = "Opening…";
+    error.textContent = "";
+    try {
+      const question = await redeemCode(input.value.trim());
+      try {
+        sessionStorage.setItem(UNLOCKED_KEY, JSON.stringify({ track: question.track, question }));
+      } catch (_) {
+        // Without session storage a reload needs a new code.
+      }
+      input.value = "";
+      startDesk(question.track, question);
+    } catch (failure) {
+      error.textContent = failure.message || "Couldn't open the question.";
+      input.select();
+    } finally {
+      submit.disabled = false;
+      submit.textContent = "Open question";
+    }
+  });
+}
+
+setupGate();

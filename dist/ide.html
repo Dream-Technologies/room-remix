@@ -9,6 +9,7 @@
     />
     <meta name="color-scheme" content="light" />
     <meta name="room-remix-run-token" content="__ROOM_REMIX_RUN_TOKEN__" />
+    <meta name="room-remix-interview-api" content="__ROOM_REMIX_INTERVIEW_API__" />
     <title>Room Remix — Code</title>
     <link
       rel="icon"
@@ -31,23 +32,47 @@
       </nav>
       <span class="edition">THE CODE DESK <span>№ 002</span></span>
     </header>
-    <main class="ide-shell">
+    <main id="question-gate" class="question-gate">
+      <div class="gate-card">
+        <form id="gate-unlock" class="gate-unlock">
+          <span class="eyebrow">THE CODE DESK</span>
+          <h1 class="gate-title">Enter your interview code.</h1>
+          <p class="gate-note">
+            Your interviewer will give you a code like K7QF2-M9XRT. It works
+            once and opens your question.
+          </p>
+          <label for="gate-code" class="gate-label">Interview code</label>
+          <input
+            id="gate-code"
+            type="text"
+            autocomplete="off"
+            autocapitalize="characters"
+            spellcheck="false"
+            maxlength="64"
+            aria-describedby="gate-error"
+            required
+          />
+          <p id="gate-error" class="gate-error" role="alert"></p>
+          <div class="gate-actions">
+            <button id="gate-submit" class="run-button" type="submit">Open question</button>
+          </div>
+        </form>
+      </div>
+    </main>
+    <main class="ide-shell" hidden>
       <aside class="challenge-panel" aria-labelledby="challenge-title">
         <div class="challenge-heading">
           <div>
-            <span class="eyebrow">THE CHALLENGE</span>
+            <span id="challenge-eyebrow" class="eyebrow">THE CHALLENGE</span>
             <h1 id="challenge-title">Read it. Solve it.</h1>
           </div>
-          <button id="clear-challenge" class="text-button" type="button">
-            Clear
-          </button>
         </div>
         <textarea
           id="challenge"
           class="challenge-text"
           spellcheck="false"
+          readonly
           aria-labelledby="challenge-title"
-          placeholder="Paste the challenge from your interviewer here."
         ></textarea>
         <details class="keyboard-guide">
           <summary>Editor keys</summary>

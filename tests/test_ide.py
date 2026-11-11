@@ -373,6 +373,42 @@ if (lines.length > 0) console.log(\`Read \${lines.length} line(s) of input.\`);`
         self.assertTrue(any(line.startswith("  Open: http://127.0.0.1:") for line in output))
         self.assertTrue(any(line.startswith("  Code: http://127.0.0.1:") for line in output))
 
+    def test_code_page_redeems_codes_with_dream_api(self):
+        expected = os.environ.get("ROOM_REMIX_INTERVIEW_API") or "https://api.dreamhq.com"
+        self.assertIn(
+            '<meta name="room-remix-interview-api" content="{}" />'.format(expected),
+            self.ide_html,
+        )
+        self.assertIn('id="gate-code"', self.ide_html)
+        self.assertIn("/interview/redeem", (ROOT / "dist" / "ide.js").read_text(encoding="utf-8"))
+
+    def test_questions_never_ship_with_the_repo(self):
+        # The questions live in Dream's private api; only a one-time code opens one.
+        self.assertFalse((ROOT / "dist" / "questions").exists())
+        for path in (ROOT / "dist").rglob("*"):
+            if path.is_file() and path.suffix in (".html", ".js", ".css", ".json"):
+                text = path.read_text(encoding="utf-8", errors="replace")
+                for marker in ("cross_entropy_with_softmax", "Attend All Meetings"):
+                    self.assertNotIn(marker, text, str(path))
+
+    def test_interview_api_can_be_pointed_elsewhere(self):
+        with running_demo("--interview-api", "http://localhost:3000/") as (url, _):
+            port = int(url.split("/?")[0].rsplit(":", 1)[1])
+            connection = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+            try:
+                connection.request("GET", "/ide.html")
+                page = connection.getresponse().read().decode("utf-8")
+            finally:
+                connection.close()
+        self.assertIn('name="room-remix-interview-api" content="http://localhost:3000/"', page)
+        result = subprocess.run(
+            COMMAND + ["--no-browser", "--interview-api", "javascript:alert(1)"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--interview-api must be an http(s) URL", result.stderr)
 
 if __name__ == "__main__":
     unittest.main()

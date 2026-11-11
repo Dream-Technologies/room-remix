@@ -3,6 +3,7 @@
 
 import argparse
 import functools
+import html
 import json
 import math
 import os
@@ -23,6 +24,9 @@ import webbrowser
 OUTPUT_LIMIT = 1_000_000
 BODY_LIMIT = 2_000_000
 RUN_LOCK = threading.Lock()
+# Dream's api, where the Code page spends a one-time interview code for its
+# question. ROOM_REMIX_INTERVIEW_API points it elsewhere (local or staging).
+DEFAULT_INTERVIEW_API = "https://api.dreamhq.com"
 
 
 LANGUAGE_TABLE = [
@@ -260,8 +264,9 @@ class LocalServer(ThreadingHTTPServer):
 
 
 class Handler(SimpleHTTPRequestHandler):
-    def __init__(self, *args, run_token, run_timeout, **kwargs):
+    def __init__(self, *args, run_token, run_timeout, interview_api, **kwargs):
         self.run_token = run_token
+        self.interview_api = interview_api
         self.run_timeout = run_timeout
         super().__init__(*args, **kwargs)
 
@@ -300,6 +305,9 @@ class Handler(SimpleHTTPRequestHandler):
             except OSError:
                 return super().do_GET()
             content = content.replace("__ROOM_REMIX_RUN_TOKEN__", self.run_token)
+            content = content.replace(
+                "__ROOM_REMIX_INTERVIEW_API__", html.escape(self.interview_api, quote=True)
+            )
             body = content.encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -368,11 +376,18 @@ def main():
     parser.add_argument("--no-browser", action="store_true", help="print both links without opening a browser")
     parser.add_argument("--ide", action="store_true", help="open the coding-challenge editor in your browser")
     parser.add_argument("--run-timeout", type=float, default=10, help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--interview-api",
+        default=os.environ.get("ROOM_REMIX_INTERVIEW_API") or DEFAULT_INTERVIEW_API,
+        help=argparse.SUPPRESS,
+    )
     args = parser.parse_args()
     if not 0 <= args.port <= 65535:
         parser.error("--port must be between 0 and 65535")
     if not math.isfinite(args.run_timeout) or args.run_timeout <= 0:
         parser.error("--run-timeout must be greater than 0")
+    if urlsplit(args.interview_api).scheme not in ("http", "https"):
+        parser.error("--interview-api must be an http(s) URL")
     assets = Path(__file__).resolve().parent / "dist"
     run_token = secrets.token_urlsafe(24)
     handler = functools.partial(
@@ -380,6 +395,7 @@ def main():
         directory=str(assets),
         run_token=run_token,
         run_timeout=args.run_timeout,
+        interview_api=args.interview_api,
     )
     try:
         server = LocalServer(("127.0.0.1", args.port), handler)

@@ -10,7 +10,7 @@ A tiny, interactive interior-design playground. Rearrange a sunlit studio or a l
 - Python 3.9 or newer.
 - A current browser, such as Chrome, Edge, Firefox, or Safari.
 
-Everything else is included. There are no packages to install, accounts to create, or API keys to configure. After cloning, the demo works offline.
+Everything else is included. There are no packages to install, accounts to create, or API keys to configure. After cloning, the room playground works offline. The coding challenge needs an internet connection to open your question.
 
 Check your setup before the session:
 
@@ -93,9 +93,15 @@ When you're finished, press **Ctrl+C** in the terminal to stop the program. No s
 
 Open the editor directly with `python3 demo.py --ide` on macOS or Linux, or `py -3 demo.py --ide` in Windows PowerShell. You can also click **Code** in the room page header.
 
-Paste the challenge your interviewer gives you into the **Challenge** panel and choose **Python**, **JavaScript**, **TypeScript**, or **Other**. Python runs with the Python you already need to launch the demo. JavaScript and TypeScript run in your browser, so no other runtimes are needed. **Other** is for writing in any language that you want to talk through instead of running.
+The editor first asks for an **interview code**. Your interviewer gives you one at the start of the session; it looks like `K7QF2-M9XRT`. Type it in and click **Open question**. The editor then shows your question in the **Challenge** panel and its starter code in the editor.
 
-For runnable languages, the **Input** box is standard input. Press **Run** (**Ctrl+Enter** or **Cmd+Enter**) to see the output. There is no autocomplete or AI. Your work stays in this browser and survives a refresh. Use **Copy** if you want to keep it somewhere else.
+Each code works only once. Refreshing the page keeps your question, but if you close the tab or your browser crashes, ask your interviewer for a new code. Your code in the editor is saved in this browser and comes back when you open the question again.
+
+Choose **Python**, **JavaScript**, **TypeScript**, or **Other**. Python runs with the Python you already need to launch the demo. JavaScript and TypeScript run in your browser, so no other runtimes are needed. **Other** is for writing in any language that you want to talk through instead of running.
+
+For runnable languages, the **Input** box is standard input. Press **Run** (**Ctrl+Enter** or **Cmd+Enter**) to see the output. There is no autocomplete or AI. Use **Copy** if you want to keep your code somewhere else.
+
+Some questions use NumPy. If **Run** reports `No module named numpy`, install it with `python3 -m pip install numpy` (Windows: `py -3 -m pip install numpy`) and run again.
 
 ## If something doesn't work
 
@@ -104,6 +110,8 @@ For runnable languages, the **Input** box is standard input. Press **Run** (**Ct
 - **Browser didn't open:** copy the complete link printed in the terminal into a browser on the same laptop.
 - **Port already in use:** launch without `--port` to automatically choose an available port.
 - **Room stopped responding:** make sure the terminal is still running the program, then refresh the browser.
+- **Interview code didn't work:** check that you typed it exactly, then ask your interviewer for a new one. A code stops working once it's used or after 24 hours.
+- **"Can't reach Dream":** the coding challenge needs an internet connection to open your question. Check your connection and try again.
 
 ## What's inside
 
@@ -132,6 +140,6 @@ room-remix/
   LICENSE             MIT
 ```
 
-The floorplans, dimensions, palettes, and geometric furniture are invented specifically for this demo. The rendering and interactions are implemented independently. This repository contains no production app code, real catalog assets, customer projects, private datasets, or internal design algorithms. It makes no network requests after the page loads from the local server and uses no analytics or external assets.
+The floorplans, dimensions, palettes, and geometric furniture are invented specifically for this demo. The rendering and interactions are implemented independently. This repository contains no production app code, real catalog assets, customer projects, private datasets, or internal design algorithms. It uses no analytics or external assets. The only network request beyond the local server is the coding challenge sending your interview code to Dream's API (`https://api.dreamhq.com`) to open your question.
 
 For contributors, run the tests with `python3 -m unittest discover -s tests -v` (Windows: `py -3 -m unittest discover -s tests -v`). Optional browser-agent hooks use feature detection and don't affect regular browsers.
