@@ -388,7 +388,7 @@ if (lines.length > 0) console.log(\`Read \${lines.length} line(s) of input.\`);`
         for path in (ROOT / "dist").rglob("*"):
             if path.is_file() and path.suffix in (".html", ".js", ".css", ".json"):
                 text = path.read_text(encoding="utf-8", errors="replace")
-                for marker in ("cross_entropy_with_softmax", "Attend All Meetings"):
+                for marker in ("cross_entropy_with_softmax", "Attend All Meetings", "Buy and Sell Stock"):
                     self.assertNotIn(marker, text, str(path))
 
     def test_interview_api_can_be_pointed_elsewhere(self):

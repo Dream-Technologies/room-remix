@@ -536,7 +536,8 @@ document.addEventListener("keydown", (event) => {
 });
 
 function startDesk(track, question) {
-  storageKey = STORAGE_PREFIX + track;
+  // Older API answers carry no question id; one track then had one question.
+  storageKey = STORAGE_PREFIX + (typeof question.question === "string" ? `${track}.${question.question}` : track);
   saved = loadSaved();
   BY_ID.python.starter = question.starter;
   current = BY_ID[saved.language] || BY_ID.python;
