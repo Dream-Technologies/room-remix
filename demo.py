@@ -26,7 +26,7 @@ BODY_LIMIT = 2_000_000
 RUN_LOCK = threading.Lock()
 # Dream's api, where the Code page spends a one-time interview code for its
 # question. ROOM_REMIX_INTERVIEW_API points it elsewhere (local or staging).
-DEFAULT_INTERVIEW_API = "https://api.dreamhq.com"
+DEFAULT_INTERVIEW_API = "https://api.eave.ai"
 
 
 LANGUAGE_TABLE = [
