@@ -374,7 +374,7 @@ if (lines.length > 0) console.log(\`Read \${lines.length} line(s) of input.\`);`
         self.assertTrue(any(line.startswith("  Code: http://127.0.0.1:") for line in output))
 
     def test_code_page_redeems_codes_with_dream_api(self):
-        expected = os.environ.get("ROOM_REMIX_INTERVIEW_API") or "https://api.dreamhq.com"
+        expected = os.environ.get("ROOM_REMIX_INTERVIEW_API") or "https://api.eave.ai"
         self.assertIn(
             '<meta name="room-remix-interview-api" content="{}" />'.format(expected),
             self.ide_html,

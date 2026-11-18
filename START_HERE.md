@@ -140,6 +140,6 @@ room-remix/
   LICENSE             MIT
 ```
 
-The floorplans, dimensions, palettes, and geometric furniture are invented specifically for this demo. The rendering and interactions are implemented independently. This repository contains no production app code, real catalog assets, customer projects, private datasets, or internal design algorithms. It uses no analytics or external assets. The only network request beyond the local server is the coding challenge sending your interview code to Dream's API (`https://api.dreamhq.com`) to open your question.
+The floorplans, dimensions, palettes, and geometric furniture are invented specifically for this demo. The rendering and interactions are implemented independently. This repository contains no production app code, real catalog assets, customer projects, private datasets, or internal design algorithms. It uses no analytics or external assets. The only network request beyond the local server is the coding challenge sending your interview code to Dream's API (`https://api.eave.ai`) to open your question.
 
 For contributors, run the tests with `python3 -m unittest discover -s tests -v` (Windows: `py -3 -m unittest discover -s tests -v`). Optional browser-agent hooks use feature detection and don't affect regular browsers.
